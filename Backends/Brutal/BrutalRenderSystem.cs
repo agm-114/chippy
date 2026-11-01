@@ -1,0 +1,124 @@
+using System.Numerics;
+using Brutal.Numerics;
+using Brutal.OpenGlApi;
+using Chippy.Models;
+using Chippy.Rendering;
+using static Brutal.OpenGlApi.OpenGl;
+
+namespace Chippy.Backends.Brutal;
+
+public class BrutalRenderSystem : IRenderSystem
+{
+    private readonly Dictionary<Mesh, GpuMesh[]> uploaded = new(ReferenceEqualityComparer.Instance);
+    private readonly GlProgram program;
+    private readonly int modelLocation;
+    private readonly int normalLocation;
+    private readonly int viewProjectionLocation;
+    private readonly int colorLocation;
+    private bool disposed;
+
+    public int UploadedMeshCount => uploaded.Count;
+
+    // Construct, draw, and dispose on the thread with the initialized OpenGL context current.
+    public BrutalRenderSystem(string? shaderDirectory = null)
+    {
+        shaderDirectory ??= Path.Combine(AppContext.BaseDirectory, "Backends", "Brutal", "Shaders");
+        using var vertexShader = CreateShader(GlShaderType.Vertex);
+        using var fragmentShader = CreateShader(GlShaderType.Fragment);
+        vertexShader.SetSource(File.ReadAllText(Path.Combine(shaderDirectory, "Model.vert"))).Compile();
+        fragmentShader.SetSource(File.ReadAllText(Path.Combine(shaderDirectory, "Model.frag"))).Compile();
+        program = CreateProgram();
+        try
+        {
+            program.Attach(vertexShader).Attach(fragmentShader).Link();
+            modelLocation = program.GetUniformLocation("uModel\0"u8);
+            normalLocation = program.GetUniformLocation("uNormalMatrix\0"u8);
+            viewProjectionLocation = program.GetUniformLocation("uViewProjection\0"u8);
+            colorLocation = program.GetUniformLocation("uColor\0"u8);
+        }
+        catch
+        {
+            program.Dispose();
+            throw;
+        }
+    }
+
+    public void BeginFrame(in Matrix4x4 view, in Matrix4x4 projection, bool wireframe = false)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        program.Use();
+        Enable(GlCapability.DepthTest);
+        PolygonMode(GlFace.FrontAndBack, wireframe ? GL_LINE : GL_FILL);
+        // Convert the shared [0, 1] depth convention to OpenGL's [-1, 1].
+        var clipDepth = Matrix4x4.Identity;
+        clipDepth.M33 = 2;
+        clipDepth.M43 = -1;
+        SetMatrix(viewProjectionLocation, view * projection * clipDepth);
+    }
+
+    // An ECS query can call this directly with its own transform matrix and tint components.
+    public void DrawMesh(Mesh mesh, in Matrix4x4 transform, Vector4? tint = null)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentNullException.ThrowIfNull(mesh);
+        var normalMatrix = Transform.GetNormalMatrix(transform);
+
+        if (!uploaded.TryGetValue(mesh, out var meshes))
+        {
+            List<GpuMesh> created = [];
+            try
+            {
+                foreach (var subMesh in mesh.SubMeshes)
+                    created.Add(new GpuMesh(subMesh));
+                meshes = [.. created];
+                uploaded.Add(mesh, meshes);
+            }
+            catch
+            {
+                created.ForEach(gpuMesh => gpuMesh.Dispose());
+                throw;
+            }
+        }
+
+        SetMatrix(modelLocation, transform);
+        SetMatrix(normalLocation, normalMatrix);
+        SetFrontFace(transform.GetDeterminant() < 0);
+        var instanceColor = tint ?? Vector4.One;
+        foreach (var gpuMesh in meshes)
+        {
+            var color = gpuMesh.Color * instanceColor;
+            Uniform(colorLocation, new float4(color.X, color.Y, color.Z, color.W));
+            gpuMesh.Draw();
+        }
+    }
+
+    // Release cached GPU buffers; the shared CPU mesh remains valid and can be drawn again.
+    public bool ReleaseMesh(Mesh mesh)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentNullException.ThrowIfNull(mesh);
+        if (!uploaded.Remove(mesh, out var meshes))
+            return false;
+        Array.ForEach(meshes, gpuMesh => gpuMesh.Dispose());
+        return true;
+    }
+
+    private static unsafe void SetMatrix(int location, in Matrix4x4 matrix)
+    {
+        fixed (Matrix4x4* pointer = &matrix)
+            Native.glUniformMatrix4fv(location, 1, false, (float*)pointer);
+    }
+
+    private static unsafe void SetFrontFace(bool mirrored) => Native.glFrontFace((GlFrontFace)(mirrored ? GL_CW : GL_CCW));
+
+    public void Dispose()
+    {
+        if (disposed)
+            return;
+        foreach (var meshes in uploaded.Values)
+            Array.ForEach(meshes, mesh => mesh.Dispose());
+        uploaded.Clear();
+        program.Dispose();
+        disposed = true;
+    }
+}
