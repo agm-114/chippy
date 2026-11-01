@@ -1,0 +1,319 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "Chippy sample bakery"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Bakery",
+      "children": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "name": "Walls",
+      "mesh": 0,
+      "translation": [
+        0,
+        0.75,
+        0
+      ],
+      "scale": [
+        2,
+        1.5,
+        1.5
+      ]
+    },
+    {
+      "name": "Roof",
+      "mesh": 1
+    },
+    {
+      "name": "Door",
+      "mesh": 2,
+      "translation": [
+        0,
+        0.45,
+        0.77
+      ],
+      "scale": [
+        0.42,
+        0.9,
+        0.08
+      ]
+    },
+    {
+      "name": "Window left",
+      "mesh": 3,
+      "translation": [
+        -0.65,
+        0.8,
+        0.77
+      ],
+      "scale": [
+        0.5,
+        0.55,
+        0.08
+      ]
+    },
+    {
+      "name": "Window right",
+      "mesh": 3,
+      "translation": [
+        0.65,
+        0.8,
+        0.77
+      ],
+      "scale": [
+        0.5,
+        0.55,
+        0.08
+      ]
+    },
+    {
+      "name": "Foundation",
+      "mesh": 4,
+      "translation": [
+        0,
+        -0.08,
+        0
+      ],
+      "scale": [
+        2.5,
+        0.16,
+        2
+      ]
+    },
+    {
+      "name": "Sign",
+      "mesh": 5,
+      "translation": [
+        0,
+        1.23,
+        0.79
+      ],
+      "scale": [
+        0.85,
+        0.22,
+        0.09
+      ]
+    },
+    {
+      "name": "Chimney",
+      "mesh": 0,
+      "translation": [
+        0.63,
+        1.95,
+        -0.3
+      ],
+      "scale": [
+        0.25,
+        0.65,
+        0.3
+      ]
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "material": 0
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 1
+          },
+          "material": 1
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "material": 2
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "material": 3
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "material": 4
+        }
+      ]
+    },
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "material": 5
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.72,
+          0.5,
+          0.27,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      }
+    },
+    {
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.4,
+          0.085,
+          0.045,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      }
+    },
+    {
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.055,
+          0.12,
+          0.15,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      }
+    },
+    {
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.08,
+          0.32,
+          0.4,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      }
+    },
+    {
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.16,
+          0.2,
+          0.13,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      }
+    },
+    {
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.9,
+          0.64,
+          0.21,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 36,
+      "type": "VEC3",
+      "min": [
+        -0.5,
+        -0.5,
+        -0.5
+      ],
+      "max": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3",
+      "min": [
+        -1.12,
+        1.45,
+        -0.87
+      ],
+      "max": [
+        1.12,
+        2.25,
+        0.87
+      ]
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 432
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 432,
+      "byteLength": 288
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 720,
+      "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAC/AAAAPwAAAD8AAAC/AAAAPwAAAL8AAAC/AAAAvwAAAL8AAAC/AAAAvwAAAD8AAAC/AAAAPwAAAD8AAAC/AAAAvwAAAL8AAAA/AAAAPwAAAL8AAAA/AAAAPwAAAD8AAAA/AAAAvwAAAL8AAAA/AAAAPwAAAD8AAAA/AAAAvwAAAD8AAAA/AAAAvwAAAL8AAAC/AAAAvwAAAL8AAAA/AAAAvwAAAD8AAAA/AAAAvwAAAL8AAAC/AAAAvwAAAD8AAAA/AAAAvwAAAD8AAAC/AAAAPwAAAL8AAAC/AAAAPwAAAD8AAAC/AAAAPwAAAD8AAAA/AAAAPwAAAL8AAAC/AAAAPwAAAD8AAAA/AAAAPwAAAL8AAAA/AAAAvwAAAL8AAAC/AAAAPwAAAL8AAAC/AAAAPwAAAL8AAAA/AAAAvwAAAL8AAAC/AAAAPwAAAL8AAAA/AAAAvwAAAL8AAAA/AAAAvwAAAD8AAAC/AAAAvwAAAD8AAAA/AAAAPwAAAD8AAAA/AAAAvwAAAD8AAAC/AAAAPwAAAD8AAAA/AAAAPwAAAD8AAAC/KVyPv5qZuT9SuF6/AAAAAAAAEEBSuF6/KVyPP5qZuT9SuF6/KVyPv5qZuT9SuF4/KVyPP5qZuT9SuF4/AAAAAAAAEEBSuF4/KVyPv5qZuT9SuF6/KVyPv5qZuT9SuF4/AAAAAAAAEEBSuF4/KVyPv5qZuT9SuF6/AAAAAAAAEEBSuF4/AAAAAAAAEEBSuF6/KVyPP5qZuT9SuF6/AAAAAAAAEEBSuF6/AAAAAAAAEEBSuF4/KVyPP5qZuT9SuF6/AAAAAAAAEEBSuF4/KVyPP5qZuT9SuF4/KVyPv5qZuT9SuF6/KVyPP5qZuT9SuF6/KVyPP5qZuT9SuF4/KVyPv5qZuT9SuF6/KVyPP5qZuT9SuF4/KVyPv5qZuT9SuF4/"
+    }
+  ]
+}

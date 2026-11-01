@@ -1,0 +1,62 @@
+using Brutal.ImGuiApi;
+
+namespace Chippy.Input;
+
+public static class ImGuiKeyExtensions
+{
+    public static ImGuiKey ToImGui(this KeyCode key) => key switch
+    {
+        KeyCode.None => ImGuiKey.None,
+        >= KeyCode.Alpha0 and <= KeyCode.Alpha9 => ImGuiKey._0 + (key - KeyCode.Alpha0),
+        >= KeyCode.A and <= KeyCode.Z => ImGuiKey.A + (key - KeyCode.A),
+        >= KeyCode.F1 and <= KeyCode.F24 => ImGuiKey.F1 + (key - KeyCode.F1),
+        >= KeyCode.Keypad0 and <= KeyCode.Keypad9 => ImGuiKey.Keypad0 + (key - KeyCode.Keypad0),
+        KeyCode.Escape => ImGuiKey.Escape,
+        KeyCode.Backspace => ImGuiKey.Backspace,
+        KeyCode.Tab => ImGuiKey.Tab,
+        KeyCode.Return => ImGuiKey.Enter,
+        KeyCode.Space => ImGuiKey.Space,
+        KeyCode.Pause => ImGuiKey.Pause,
+        KeyCode.CapsLock => ImGuiKey.CapsLock,
+        KeyCode.NumLock => ImGuiKey.NumLock,
+        KeyCode.ScrollLock => ImGuiKey.ScrollLock,
+        KeyCode.PrintScreen => ImGuiKey.PrintScreen,
+        KeyCode.Insert => ImGuiKey.Insert,
+        KeyCode.Delete => ImGuiKey.Delete,
+        KeyCode.Home => ImGuiKey.Home,
+        KeyCode.End => ImGuiKey.End,
+        KeyCode.PageUp => ImGuiKey.PageUp,
+        KeyCode.PageDown => ImGuiKey.PageDown,
+        KeyCode.LeftArrow => ImGuiKey.LeftArrow,
+        KeyCode.RightArrow => ImGuiKey.RightArrow,
+        KeyCode.UpArrow => ImGuiKey.UpArrow,
+        KeyCode.DownArrow => ImGuiKey.DownArrow,
+        KeyCode.Quote => ImGuiKey.Apostrophe,
+        KeyCode.Comma => ImGuiKey.Comma,
+        KeyCode.Minus => ImGuiKey.Minus,
+        KeyCode.Period => ImGuiKey.Period,
+        KeyCode.Slash => ImGuiKey.Slash,
+        KeyCode.Semicolon => ImGuiKey.Semicolon,
+        KeyCode.Equals => ImGuiKey.Equal,
+        KeyCode.LeftBracket => ImGuiKey.LeftBracket,
+        KeyCode.Backslash => ImGuiKey.Backslash,
+        KeyCode.RightBracket => ImGuiKey.RightBracket,
+        KeyCode.BackQuote => ImGuiKey.GraveAccent,
+        KeyCode.NonUsBackslash => ImGuiKey.Oem102,
+        KeyCode.KeypadPeriod => ImGuiKey.KeypadDecimal,
+        KeyCode.KeypadDivide => ImGuiKey.KeypadDivide,
+        KeyCode.KeypadMultiply => ImGuiKey.KeypadMultiply,
+        KeyCode.KeypadMinus => ImGuiKey.KeypadSubtract,
+        KeyCode.KeypadPlus => ImGuiKey.KeypadAdd,
+        KeyCode.LeftShift => ImGuiKey.LeftShift,
+        KeyCode.RightShift => ImGuiKey.RightShift,
+        KeyCode.LeftControl => ImGuiKey.LeftCtrl,
+        KeyCode.RightControl => ImGuiKey.RightCtrl,
+        KeyCode.LeftAlt => ImGuiKey.LeftAlt,
+        KeyCode.RightAlt => ImGuiKey.RightAlt,
+        KeyCode.LeftWindows => ImGuiKey.LeftSuper,
+        KeyCode.RightWindows => ImGuiKey.RightSuper,
+        KeyCode.Menu => ImGuiKey.Menu,
+        _ => throw new ArgumentOutOfRangeException(nameof(key), key, "Unknown key code.")
+    };
+}
