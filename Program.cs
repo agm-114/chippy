@@ -1,6 +1,8 @@
 using System.Numerics;
+using Arch.Core;
 using Chippy.Backends.Brutal;
 using Chippy.Backends.MonoGame;
+using Chippy.Components;
 using Chippy.Models;
 using Chippy.Viewer;
 
@@ -14,17 +16,25 @@ try
     var model = Mesh.Load(modelPath);
     Console.WriteLine($"Loaded {Path.GetFileName(modelPath)}: {model.SubMeshes.Count} primitives, " +
         $"{model.TriangleCount} triangles.");
-    MeshInstance[] instances = args.Contains("--model-demo")
-        ? [
-            new(model) { Transform = Transform.FromMatrix(model.Normalization * Matrix4x4.CreateScale(0.6f)
-                * Matrix4x4.CreateTranslation(-0.85f, 0, 0)) },
-            new(model) { Transform = Transform.FromMatrix(model.Normalization * Matrix4x4.CreateScale(0.6f)
-                * Matrix4x4.CreateRotationY(0.4f) * Matrix4x4.CreateTranslation(0.85f, 0, 0)), Tint = new(0.6f, 0.8f, 1, 1) }
-        ]
-        : [new(model) { Transform = Transform.FromMatrix(model.Normalization) }];
+    using var world = World.Create();
+    Entity selected;
+    if (args.Contains("--model-demo"))
+    {
+        var parent = world.Create(new Transform());
+        selected = world.Create((model.Normalization * Matrix4x4.CreateScale(0.6f)
+            * Matrix4x4.CreateTranslation(-0.85f, 0, 0)).ToTransform(parent), new MeshRenderer(model));
+        world.Create((model.Normalization * Matrix4x4.CreateScale(0.6f)
+            * Matrix4x4.CreateRotationY(0.4f) * Matrix4x4.CreateTranslation(0.85f, 0, 0)).ToTransform(parent),
+            new MeshRenderer(model) { Tint = new(0.6f, 0.8f, 1, 1) });
+    }
+    else
+        selected = world.Create(model.Normalization.ToTransform(), new MeshRenderer(model));
     var name = Path.GetFileName(modelPath);
     var smokeTest = args.Contains("--smoke-test");
-    var state = new ViewerState(instances, backend == "monogame" ? RenderBackend.MonoGame : RenderBackend.Brutal);
+    var state = new ViewerState(world, backend == "monogame" ? RenderBackend.MonoGame : RenderBackend.Brutal)
+    {
+        SelectedEntity = selected
+    };
     while (true)
     {
         bool switchRequested;

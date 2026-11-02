@@ -1,12 +1,12 @@
 using System.Numerics;
-using Chippy.Models;
+using Arch.Core;
 using Chippy.Rendering;
 
 namespace Chippy.Viewer;
 
-public class ViewerState(MeshInstance[] instances, RenderBackend renderer = RenderBackend.Brutal)
+public class ViewerState(World world, RenderBackend renderer = RenderBackend.Brutal)
 {
-    public MeshInstance[] Instances { get; } = instances;
+    public World World { get; } = world;
     public OrbitCamera Camera { get; } = new();
     public WindowPlacement? WindowPlacement { get; private set; }
     public RenderBackend Renderer = renderer;
@@ -16,7 +16,7 @@ public class ViewerState(MeshInstance[] instances, RenderBackend renderer = Rend
     public bool PanelCollapsed;
     public bool Wireframe;
     public bool AutoRotate;
-    public int SelectedInstance;
+    public Entity? SelectedEntity;
 
     public void SaveWindowPlacement(int x, int y, int width, int height)
     {

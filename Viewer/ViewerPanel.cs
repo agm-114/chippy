@@ -1,5 +1,8 @@
+using Arch.Core;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
+using Chippy.Components;
+using Chippy.Models;
 
 namespace Chippy.Viewer;
 
@@ -8,6 +11,9 @@ public class ViewerPanel : IDisposable
     private readonly ImGuiContextPtr context;
     private readonly string name;
     private readonly ViewerState state;
+    private readonly QueryDescription transformQuery = new QueryDescription().WithAll<Transform>();
+    private readonly List<Entity> entities = [];
+    private readonly HashSet<Mesh> meshes = new(ReferenceEqualityComparer.Instance);
     private bool disposed;
 
     public bool WantsKeyboard => ImGui.GetIO().WantCaptureKeyboard;
@@ -44,13 +50,14 @@ public class ViewerPanel : IDisposable
         }
         if (contentsVisible)
         {
+            RefreshEntities();
             ImGui.TextWrapped(name);
-            ImGui.Text($"{state.Instances.Length:N0} instances · {state.Instances.Select(instance => instance.SharedMesh).Distinct().Count():N0} shared meshes");
+            ImGui.Text($"{entities.Count:N0} entities · {meshes.Count:N0} shared meshes");
             var fps = ImGui.GetIO().Framerate;
             ImGui.Text($"{fps:F0} FPS · {(fps > 0 ? 1000 / fps : 0):F2} ms/frame");
 
             DrawRendererControls();
-            DrawModelControls();
+            DrawEntityControls();
 
             ImGui.SeparatorText("Camera"u8);
             ImGui.SliderAngle("Yaw"u8, ref state.Camera.Yaw, -180, 180, "%.0f deg"u8, ImGuiSliderFlags.AlwaysClamp);
@@ -92,37 +99,72 @@ public class ViewerPanel : IDisposable
         ImGui.EndCombo();
     }
 
-    private void DrawModelControls()
+    private void RefreshEntities()
     {
-        if (state.Instances.Length == 0)
-            return;
-        ImGui.SeparatorText("Model instances"u8);
-        if (state.Instances.Length > 1)
-            for (var i = 0; i < state.Instances.Length; i++)
-                if (ImGui.Selectable($"Instance {i + 1}", i == state.SelectedInstance))
-                    state.SelectedInstance = i;
-
-        ref var instance = ref state.Instances[state.SelectedInstance];
-        var mesh = instance.SharedMesh;
-        if (mesh is null)
+        entities.Clear();
+        meshes.Clear();
+        state.World.Query(in transformQuery, (Entity entity, ref Transform _) =>
         {
-            ImGui.TextWrapped("No mesh assigned."u8);
+            entities.Add(entity);
+            if (state.World.TryGet<MeshRenderer>(entity, out var renderer) && renderer.SharedMesh is { } mesh)
+                meshes.Add(mesh);
+        });
+    }
+
+    private void DrawEntityControls()
+    {
+        if (entities.Count == 0)
+        {
+            state.SelectedEntity = null;
             return;
         }
-        ImGui.Text($"{mesh.SubMeshes.Count:N0} submeshes · {mesh.TriangleCount:N0} triangles");
-        ImGui.Checkbox("Visible"u8, ref instance.Visible);
-        var position = instance.Transform.Position;
+        if (state.SelectedEntity is not { } selected || !entities.Contains(selected))
+            state.SelectedEntity = entities[0];
+
+        ImGui.SeparatorText("Scene entities"u8);
+        foreach (var candidate in entities)
+            if (ImGui.Selectable($"Entity {candidate.Id}", candidate == state.SelectedEntity))
+                state.SelectedEntity = candidate;
+
+        var entity = state.SelectedEntity.Value;
+        ref var transform = ref state.World.Get<Transform>(entity);
+        DrawParentControls(entity, transform.Parent);
+        var position = transform.LocalPosition;
         var positionEdit = new float3(position.X, position.Y, position.Z);
-        if (ImGui.DragFloat3("Position"u8, ref positionEdit, 0.01f))
-            instance.Transform.Position = new(positionEdit.X, positionEdit.Y, positionEdit.Z);
-        var scale = instance.Transform.LocalScale;
+        if (ImGui.DragFloat3("Local position"u8, ref positionEdit, 0.01f))
+            transform.LocalPosition = new(positionEdit.X, positionEdit.Y, positionEdit.Z);
+        var angles = transform.LocalEulerAngles;
+        var rotationEdit = new float3(angles.X, angles.Y, angles.Z);
+        if (ImGui.DragFloat3("Local rotation (deg)"u8, ref rotationEdit, 0.5f))
+            transform.LocalEulerAngles = new(rotationEdit.X, rotationEdit.Y, rotationEdit.Z);
+        var scale = transform.LocalScale;
         var scaleEdit = new float3(scale.X, scale.Y, scale.Z);
         if (ImGui.DragFloat3("Local scale"u8, ref scaleEdit, 0.01f, 0.01f, 100f, "%.2f"u8, ImGuiSliderFlags.AlwaysClamp))
-            instance.Transform.LocalScale = new(scaleEdit.X, scaleEdit.Y, scaleEdit.Z);
-        var tint = instance.Tint;
+            transform.LocalScale = new(scaleEdit.X, scaleEdit.Y, scaleEdit.Z);
+
+        if (!state.World.Has<MeshRenderer>(entity))
+            return;
+        ref var renderer = ref state.World.Get<MeshRenderer>(entity);
+        if (renderer.SharedMesh is { } mesh)
+            ImGui.Text($"{mesh.SubMeshes.Count:N0} submeshes · {mesh.TriangleCount:N0} triangles");
+        ImGui.Checkbox("Enabled"u8, ref renderer.Enabled);
+        var tint = renderer.Tint;
         var tintEdit = new float4(tint.X, tint.Y, tint.Z, tint.W);
         if (ImGui.ColorEdit4("Tint"u8, ref tintEdit, ImGuiColorEditFlags.NoAlpha))
-            instance.Tint = new(tintEdit.X, tintEdit.Y, tintEdit.Z, tintEdit.W);
+            renderer.Tint = new(tintEdit.X, tintEdit.Y, tintEdit.Z, tintEdit.W);
+    }
+
+    private void DrawParentControls(Entity entity, Entity? parent)
+    {
+        if (!ImGui.BeginCombo("Parent"u8, parent is { } current ? $"Entity {current.Id}" : "None"))
+            return;
+        if (ImGui.Selectable("None"u8, parent is null))
+            state.World.TrySetParent(entity, null);
+        foreach (var candidate in entities)
+            if (state.World.CanSetParent(entity, candidate)
+                && ImGui.Selectable($"Entity {candidate.Id}", candidate == parent))
+                state.World.TrySetParent(entity, candidate);
+        ImGui.EndCombo();
     }
 
     public void Dispose()

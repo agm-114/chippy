@@ -1,6 +1,7 @@
 using System.Numerics;
 using Brutal.Numerics;
 using Brutal.OpenGlApi;
+using Chippy.Components;
 using Chippy.Models;
 using Chippy.Rendering;
 using static Brutal.OpenGlApi.OpenGl;
@@ -56,12 +57,13 @@ public class BrutalRenderSystem : IRenderSystem
         SetMatrix(viewProjectionLocation, view * projection * clipDepth);
     }
 
-    // An ECS query can call this directly with its own transform matrix and tint components.
-    public void DrawMesh(Mesh mesh, in Matrix4x4 transform, Vector4? tint = null)
+    public void DrawMesh(in Transform transform, in MeshRenderer meshRenderer)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+        var mesh = meshRenderer.SharedMesh;
         ArgumentNullException.ThrowIfNull(mesh);
-        var normalMatrix = Transform.GetNormalMatrix(transform);
+        var matrix = transform.LocalToWorldMatrix;
+        var normalMatrix = matrix.GetNormalMatrix();
 
         if (!uploaded.TryGetValue(mesh, out var meshes))
         {
@@ -80,13 +82,12 @@ public class BrutalRenderSystem : IRenderSystem
             }
         }
 
-        SetMatrix(modelLocation, transform);
+        SetMatrix(modelLocation, matrix);
         SetMatrix(normalLocation, normalMatrix);
-        SetFrontFace(transform.GetDeterminant() < 0);
-        var instanceColor = tint ?? Vector4.One;
+        SetFrontFace(matrix.GetDeterminant() < 0);
         foreach (var gpuMesh in meshes)
         {
-            var color = gpuMesh.Color * instanceColor;
+            var color = gpuMesh.Color * meshRenderer.Tint;
             Uniform(colorLocation, new float4(color.X, color.Y, color.Z, color.W));
             gpuMesh.Draw();
         }

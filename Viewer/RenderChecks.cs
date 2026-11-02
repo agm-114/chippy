@@ -1,3 +1,5 @@
+using Arch.Core;
+using Chippy.Components;
 using Chippy.Models;
 using Chippy.Rendering;
 
@@ -17,11 +19,20 @@ internal static class RenderChecks
         Console.WriteLine($"Render check passed: {visible} visible model pixels.");
     }
 
-    public static void CheckMeshSharing(IRenderSystem renderer, MeshInstance[] instances)
+    public static void CheckMeshSharing(IRenderSystem renderer, World world)
     {
-        var expected = instances.Where(instance => instance.Visible).Select(instance => instance.SharedMesh).Distinct().Count();
-        if (renderer.UploadedMeshCount != expected)
+        var query = new QueryDescription().WithAll<Transform, MeshRenderer>();
+        HashSet<Mesh> meshes = new(ReferenceEqualityComparer.Instance);
+        var count = 0;
+        world.Query(in query, (ref Transform _, ref MeshRenderer meshRenderer) =>
+        {
+            if (!meshRenderer.Enabled || meshRenderer.SharedMesh is not { } mesh)
+                return;
+            meshes.Add(mesh);
+            count++;
+        });
+        if (renderer.UploadedMeshCount != meshes.Count)
             throw new InvalidOperationException("Mesh GPU resource sharing check failed.");
-        Console.WriteLine($"Mesh check passed: {instances.Length} instances share {renderer.UploadedMeshCount} uploaded meshes.");
+        Console.WriteLine($"Mesh check passed: {count} renderable entities share {renderer.UploadedMeshCount} uploaded meshes.");
     }
 }

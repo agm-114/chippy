@@ -106,7 +106,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                 if (uiVertices == 0 || GetError() != GL_NO_ERROR)
                     throw new InvalidOperationException("ImGui rendering check failed.");
                 Console.WriteLine($"ImGui check passed: {uiVertices} UI vertices; no OpenGL errors.");
-                RenderChecks.CheckMeshSharing(renderer, state.Instances);
+                RenderChecks.CheckMeshSharing(renderer, state.World);
                 return state.Renderer != RenderBackend.Brutal;
             }
             window.SwapBuffers();

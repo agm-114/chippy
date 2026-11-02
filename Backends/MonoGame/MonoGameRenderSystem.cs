@@ -1,4 +1,5 @@
 using System.Numerics;
+using Chippy.Components;
 using Chippy.Models;
 using Chippy.Rendering;
 using Microsoft.Xna.Framework.Graphics;
@@ -41,11 +42,13 @@ public class MonoGameRenderSystem : IRenderSystem
         effect.Projection = projection.ToXna();
     }
 
-    public void DrawMesh(Mesh mesh, in Matrix4x4 transform, Vector4? tint = null)
+    public void DrawMesh(in Transform transform, in MeshRenderer meshRenderer)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+        var mesh = meshRenderer.SharedMesh;
         ArgumentNullException.ThrowIfNull(mesh);
-        Transform.GetNormalMatrix(transform);
+        var matrix = transform.LocalToWorldMatrix;
+        matrix.GetNormalMatrix();
         if (!uploaded.TryGetValue(mesh, out var meshes))
         {
             List<MonoGameMesh> created = [];
@@ -62,10 +65,10 @@ public class MonoGameRenderSystem : IRenderSystem
                 throw;
             }
         }
-        effect.World = transform.ToXna();
+        effect.World = matrix.ToXna();
         foreach (var gpuMesh in meshes)
         {
-            var color = gpuMesh.Color * (tint ?? Vector4.One);
+            var color = gpuMesh.Color * meshRenderer.Tint;
             effect.DiffuseColor = new(color.X, color.Y, color.Z);
             effect.Alpha = 1;
             foreach (var pass in effect.CurrentTechnique.Passes)

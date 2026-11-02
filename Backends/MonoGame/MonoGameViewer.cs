@@ -90,7 +90,7 @@ public class MonoGameViewer : Game, IInputSystem
             if (uiVertices == 0 || changed < 100)
                 throw new InvalidOperationException("MonoGame ImGui rendering check failed.");
             Console.WriteLine($"ImGui check passed: {uiVertices} UI vertices; {changed} UI pixels.");
-            RenderChecks.CheckMeshSharing(renderer!, state.Instances);
+            RenderChecks.CheckMeshSharing(renderer!, state.World);
         }
         SwitchRequested = state.Renderer != RenderBackend.MonoGame;
         if (checkFrame || SwitchRequested)
