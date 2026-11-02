@@ -36,6 +36,7 @@ interfaces. CPU mesh assets remain shared C# objects.
 using System.Numerics;
 using Arch.Core;
 using Chippy.Components;
+using Chippy.Ecs;
 using Chippy.Models;
 using Chippy.Rendering;
 using Chippy.Systems;
@@ -46,6 +47,8 @@ var parent = world.Create(new Transform { LocalPosition = new(2, 0, 0) });
 var entity = world.Create(
     bakery.Normalization.ToTransform(parent),
     new MeshRenderer(bakery) { Tint = new(0.6f, 0.8f, 1, 1) });
+
+var owner = entity.World; // C# 14 extension property, available through Chippy.Ecs.
 
 // Systems receive the actual Arch world; there is no generic ECS adapter.
 var transforms = new TransformSystem(world);
@@ -66,6 +69,11 @@ The caller owns and disposes the world and renderer. Use the world on the scene
 thread; finish simulation jobs before editing or rendering it. GPU creation,
 drawing, release, and disposal happen on the graphics thread with its context or
 device available.
+
+`entity.World` resolves a live entity's owning world through Arch's registry and
+throws if the lookup is invalid. `entity.TryGetWorld(out var world)` returns false
+instead. Keep entities within their world's lifetime; Arch can recycle world IDs
+after disposal. Systems can continue receiving an explicit world dependency.
 
 ## Transform hierarchy
 
@@ -134,6 +142,7 @@ controls, focus/UI capture handling, delta clamping, and automatic orbit. The ho
 owns native events, clearing, viewport changes, presentation, and ImGui rendering.
 
 - `Components`: Arch scene data: transforms and mesh renderers.
+- `Ecs`: Arch entity convenience extensions, including `entity.World`.
 - `Systems`: transform hierarchy resolution and parenting validation.
 - `Models`: shared CPU mesh assets, glTF import, and bounds.
 - `Rendering`: renderer interface, world mesh query, matrix helpers, and orbit camera.
