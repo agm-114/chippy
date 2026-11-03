@@ -5,6 +5,7 @@ using Chippy.Viewer;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using Numerics = System.Numerics;
 
 namespace Chippy.Backends.MonoGame;
 
@@ -19,8 +20,20 @@ public class MonoGameViewer : Game, IInputSystem
     private MonoGameViewerUi? ui;
     private int frames;
     private KeyboardState keyboard;
+    private MouseState mouse, previousMouse;
+    private bool mouseInitialized, wasFocused;
     public bool SwitchRequested { get; private set; }
     public bool IsFocused => IsActive;
+    public Numerics.Vector2 MouseDelta { get; private set; }
+    public float ScrollDelta { get; private set; }
+
+    public bool GetMouseButton(MouseButton button) => (button switch
+    {
+        MouseButton.Left => mouse.LeftButton,
+        MouseButton.Right => mouse.RightButton,
+        MouseButton.Middle => mouse.MiddleButton,
+        _ => ButtonState.Released
+    }) == ButtonState.Pressed;
 
     public bool GetKey(KeyCode key) => key != KeyCode.None && keyboard.IsKeyDown(key.ToMonoGame());
 
@@ -38,7 +51,7 @@ public class MonoGameViewer : Game, IInputSystem
             GraphicsProfile = GraphicsProfile.HiDef,
             SynchronizeWithVerticalRetrace = false
         };
-        Window.Title = $"Chippy · {name} · MonoGame · Arrows: orbit | +/-: zoom | Esc: close";
+        Window.Title = $"Chippy · {name} · MonoGame · Middle drag: orbit | WASD: move | Wheel: zoom";
         Window.AllowUserResizing = true;
         IsMouseVisible = true;
         IsFixedTimeStep = false;
@@ -58,8 +71,14 @@ public class MonoGameViewer : Game, IInputSystem
     protected override void Update(GameTime gameTime)
     {
         keyboard = Keyboard.GetState();
+        mouse = Mouse.GetState();
+        MouseDelta = mouseInitialized && wasFocused && IsFocused ? new(mouse.X - previousMouse.X, mouse.Y - previousMouse.Y) : Numerics.Vector2.Zero;
+        ScrollDelta = mouseInitialized && wasFocused && IsFocused ? (mouse.ScrollWheelValue - previousMouse.ScrollWheelValue) / 120f : 0;
+        previousMouse = mouse;
+        mouseInitialized = true;
+        wasFocused = IsFocused;
         ui!.PollInput();
-        if (!viewer.Update(ui.WantsKeyboard, ui.HasPendingInput, CanDraw ? ui.BuildFrame : null))
+        if (!viewer.Update(ui.WantsKeyboard, ui.HasPendingInput, CanDraw ? ui.BuildFrame : null, ui.WantsMouse))
         {
             Exit();
             return;
@@ -79,7 +98,7 @@ public class MonoGameViewer : Game, IInputSystem
             return;
         var background = state.Background;
         GraphicsDevice.Clear(new Color(background.X, background.Y, background.Z, background.W));
-        viewer.Draw(viewport.AspectRatio);
+        viewer.Draw(new(viewport.Width, viewport.Height));
         var checkFrame = smokeTest && ++frames == 3;
         Color[]? modelPixels = null;
         if (checkFrame)

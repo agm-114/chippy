@@ -1,5 +1,7 @@
 using System.Numerics;
 using Arch.Core;
+using Arch.Core.Extensions;
+using Chippy.Components;
 using Chippy.Input;
 using Chippy.Rendering;
 using Chippy.Systems;
@@ -11,7 +13,7 @@ public class ModelViewer : IDisposable
     private readonly IRenderSystem renderSystem;
     private readonly IInputSystem input;
     private readonly TransformSystem transforms;
-    private readonly MeshRenderSystem meshes;
+    private readonly SceneRenderSystem scene;
     private readonly TimeProvider clock;
     private readonly long started;
     private readonly int ownerThread = Environment.CurrentManagedThreadId;
@@ -19,6 +21,8 @@ public class ModelViewer : IDisposable
     private Task? simulationWork;
     private double previousTime, previousSimulationTime, nextRenderTime;
     private bool earlyTick, redraw, uiInitialized, worldChanged, disposed;
+    private bool middleHeld, dragging, focusHeld;
+    private readonly QueryDescription focusQuery = new QueryDescription().WithAll<Transform>();
     public ViewerState State { get; }
     public bool UsesPublishedData => published is not null;
     public bool SimulationInProgress => simulationWork is { IsCompleted: false };
@@ -38,7 +42,7 @@ public class ModelViewer : IDisposable
         State = state;
         this.clock = clock ?? TimeProvider.System;
         transforms = new(state.World);
-        meshes = new(renderSystem);
+        scene = new(renderSystem);
         UpdatePublication();
         started = this.clock.GetTimestamp();
     }
@@ -59,13 +63,14 @@ public class ModelViewer : IDisposable
 
     // UI remains on the window thread, with exclusive live-world access between tick tasks.
     // The callback returns true for world edits. Native backends queue input without touching the world.
-    public bool Update(bool keyboardCaptured = false, bool uiInputPending = false, Func<bool>? updateUi = null)
+    public bool Update(bool keyboardCaptured = false, bool uiInputPending = false, Func<bool>? updateUi = null, bool mouseCaptured = false)
     {
         EnsureOwner();
+        State.Audio?.Update();
         var now = Now;
         var delta = now - previousTime;
         previousTime = now;
-        if (!UpdateCamera(delta, keyboardCaptured)) return false;
+        if (!UpdateCamera(delta, keyboardCaptured, mouseCaptured)) return false;
         if (SimulationInProgress) return true;
         var completed = simulationWork is not null;
         if (simulationWork is { } work)
@@ -149,34 +154,68 @@ public class ModelViewer : IDisposable
         worldChanged = redraw = true;
     }
 
-    public void Draw(float aspectRatio)
+    public void Draw(Vector2 viewportSize)
     {
         EnsureOwner();
         var interval = 1.0 / State.TargetFrameRate;
         nextRenderTime = (Math.Floor(Now / interval) + 1) * interval;
         redraw = false;
-        var view = Matrix4x4.CreateLookAt(State.Camera.Eye, Vector3.Zero, Vector3.UnitY);
-        var projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 4, aspectRatio, 0.01f, 100f);
+        var view = Matrix4x4.CreateLookAt(State.Camera.Eye, State.Camera.Target, Vector3.UnitY);
+        var projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 4, viewportSize.X / viewportSize.Y, 0.01f, 2000f);
         renderSystem.BeginFrame(view, projection, State.Wireframe);
         if (!UsesPublishedData) transforms.Update();
-        meshes.Draw(RenderWorld);
+        scene.Draw(RenderWorld, viewportSize, State.DrawOverlay);
         DisplayedTick = PublishedTick ?? State.Simulation.Tick;
     }
 
-    private bool UpdateCamera(double delta, bool keyboardCaptured)
+    private bool UpdateCamera(double delta, bool keyboardCaptured, bool mouseCaptured)
     {
+        var camera = State.Camera;
+        var frameDelta = (float)Math.Clamp(delta, 0, 0.1);
+        var shift = input.GetKey(KeyCode.LeftShift) || input.GetKey(KeyCode.RightShift);
         var movement = Vector3.Zero;
         if (input.IsFocused && !keyboardCaptured)
         {
             if (input.GetKey(KeyCode.Escape)) return false;
-            movement = new(input.GetAxis(KeyCode.LeftArrow, KeyCode.RightArrow),
-                input.GetAxis(KeyCode.DownArrow, KeyCode.UpArrow),
-                Math.Clamp(input.GetAxis(KeyCode.Equals, KeyCode.Minus)
-                    + input.GetAxis(KeyCode.KeypadPlus, KeyCode.KeypadMinus), -1, 1));
+            movement = new(input.GetAxis(KeyCode.A, KeyCode.D),
+                (input.GetKey(KeyCode.Space) ? 1 : 0) - (input.GetKey(KeyCode.LeftControl) || input.GetKey(KeyCode.RightControl) ? 1 : 0),
+                input.GetAxis(KeyCode.S, KeyCode.W));
+            if (movement != Vector3.Zero)
+            {
+                State.FollowSelected = false;
+                camera.Pan(Vector3.Normalize(movement) * Math.Max(camera.Distance, 1) * frameDelta * (shift ? 2 : 0.5f));
+            }
+            var focus = input.GetKey(KeyCode.F);
+            if (focus && !focusHeld) State.FollowSelected = true;
+            focusHeld = focus;
+            camera.Move(input.GetAxis(KeyCode.LeftArrow, KeyCode.RightArrow) * frameDelta,
+                input.GetAxis(KeyCode.DownArrow, KeyCode.UpArrow) * frameDelta,
+                Math.Clamp(input.GetAxis(KeyCode.Equals, KeyCode.Minus) + input.GetAxis(KeyCode.KeypadPlus, KeyCode.KeypadMinus), -1, 1) * frameDelta);
         }
-        var frameDelta = (float)Math.Clamp(delta, 0, 0.1);
-        State.Camera.Move((movement.X + (State.AutoRotate ? 0.35f : 0)) * frameDelta,
-            movement.Y * frameDelta, movement.Z * frameDelta);
+        else focusHeld = false;
+        var middle = input.IsFocused && input.GetMouseButton(MouseButton.Middle);
+        if (!middle) dragging = false;
+        else if (!middleHeld && !mouseCaptured) dragging = true;
+        middleHeld = middle;
+        if (dragging)
+        {
+            var mouse = input.MouseDelta;
+            if (shift)
+            {
+                State.FollowSelected = false;
+                camera.Pan(new Vector3(-mouse.X, mouse.Y, 0) * camera.Distance * 0.0015f);
+            }
+            else camera.Move(-mouse.X * 0.005f, mouse.Y * 0.005f, 0);
+        }
+        if (input.IsFocused && !mouseCaptured) camera.Move(0, 0, -input.ScrollDelta * 0.12f);
+        if (State.AutoRotate) camera.Move(0.35f * frameDelta, 0, 0);
+        // Follow only completed render data, including while a simulation worker is running.
+        if (State.FollowSelected && State.SelectedEntity is { } selected)
+            RenderWorld.Query(in focusQuery, (Entity entity, ref Transform transform) =>
+            {
+                var original = entity.TryGet<SourceEntity>(out var source) ? source.Entity : entity;
+                if (original == selected) camera.Follow(transform.LocalToWorldMatrix.Translation, frameDelta);
+            });
         return true;
     }
 

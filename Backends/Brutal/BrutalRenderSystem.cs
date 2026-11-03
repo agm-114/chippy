@@ -16,6 +16,9 @@ public class BrutalRenderSystem : IRenderSystem
     private readonly int normalLocation;
     private readonly int viewProjectionLocation;
     private readonly int colorLocation;
+    private readonly int unlitLocation;
+    private readonly BrutalPrimitives primitives;
+    private Matrix4x4 viewProjection;
     private bool disposed;
 
     public int UploadedMeshCount => uploaded.Count;
@@ -36,6 +39,8 @@ public class BrutalRenderSystem : IRenderSystem
             normalLocation = program.GetUniformLocation("uNormalMatrix\0"u8);
             viewProjectionLocation = program.GetUniformLocation("uViewProjection\0"u8);
             colorLocation = program.GetUniformLocation("uColor\0"u8);
+            unlitLocation = program.GetUniformLocation("uUnlit\0"u8);
+            primitives = new();
         }
         catch
         {
@@ -48,13 +53,15 @@ public class BrutalRenderSystem : IRenderSystem
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         program.Use();
+        Disable(GlCapability.Blend);
         Enable(GlCapability.DepthTest);
         PolygonMode(GlFace.FrontAndBack, wireframe ? GL_LINE : GL_FILL);
         // Convert the shared [0, 1] depth convention to OpenGL's [-1, 1].
         var clipDepth = Matrix4x4.Identity;
         clipDepth.M33 = 2;
         clipDepth.M43 = -1;
-        SetMatrix(viewProjectionLocation, view * projection * clipDepth);
+        viewProjection = view * projection * clipDepth;
+        SetMatrix(viewProjectionLocation, viewProjection);
     }
 
     public void DrawMesh(in Transform transform, in MeshRenderer meshRenderer)
@@ -83,6 +90,7 @@ public class BrutalRenderSystem : IRenderSystem
         }
 
         SetMatrix(modelLocation, matrix);
+        Uniform(unlitLocation, meshRenderer.Unlit ? 1 : 0);
         SetMatrix(normalLocation, normalMatrix);
         SetFrontFace(matrix.GetDeterminant() < 0);
         foreach (var gpuMesh in meshes)
@@ -91,6 +99,12 @@ public class BrutalRenderSystem : IRenderSystem
             Uniform(colorLocation, new float4(color.X, color.Y, color.Z, color.W));
             gpuMesh.Draw();
         }
+    }
+
+    public void DrawPrimitives(ReadOnlySpan<PrimitiveVertex> vertices, PrimitiveTopology topology, bool screenSpace = false)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        primitives.Draw(vertices, topology, screenSpace ? Matrix4x4.Identity : viewProjection, screenSpace);
     }
 
     // Release cached GPU buffers; the shared CPU mesh remains valid and can be drawn again.
@@ -119,6 +133,7 @@ public class BrutalRenderSystem : IRenderSystem
         foreach (var meshes in uploaded.Values)
             Array.ForEach(meshes, mesh => mesh.Dispose());
         uploaded.Clear();
+        primitives.Dispose();
         program.Dispose();
         disposed = true;
     }

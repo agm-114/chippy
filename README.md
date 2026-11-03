@@ -13,12 +13,16 @@ dotnet run -- --preemptive-ticking
 dotnet run -- --no-publish-render-data
 ```
 
-The default model is `Assets/Bakery.gltf`. The demo creates two mesh entities
-under a shared parent, reusing one loaded mesh. Select the parent in the inspector
-to move, rotate, or scale both models together.
+The default scene is an animated solar system with orbit paths and a 2D map.
+Sizes, distances and periods are schematic; this is circular motion, not an orbital
+physics solver. `--model-demo` loads two copies of `Assets/Bakery.gltf` under a shared parent.
 
-Use the arrow keys to orbit, `+`/`-` to zoom, and `Esc` to close. Camera shortcuts
-pause while the window is unfocused or ImGui captures keyboard input. The panel
+Middle-drag or the arrow keys orbit; wheel or `+`/`-` zoom; Shift + middle-drag pans.
+WASD moves the pivot along the camera's ground plane, Space/Ctrl raises/lowers it,
+and Shift speeds up keyboard movement. Press F or enable **Follow selected** for smooth
+tracking of a rendered entity. Moving the pivot cancels following; Esc closes.
+Controls take inspiration from [Felicette's camera](https://github.com/agm-114/felicette/blob/main/Assets/Controls/CameraController.cs).
+Camera input pauses while unfocused or captured by ImGui. The panel
 edits entity parenting, local transforms, renderer tint/enabled state, camera,
 wireframe mode, target FPS, and background color. Simulation controls show the
 current tick and simulated time, with pause, speed, single-step, render-data publishing,
@@ -32,8 +36,8 @@ order. Implement `ISimulationSystem.Update(double deltaTime)` and register the
 system with `simulation.Add(system, every: 10)` to run it on ticks 10, 20, 30, etc.
 The interval is measured against the shared tick counter, including for systems
 registered later. Each call receives its scheduled interval in simulated seconds;
-at 10 ticks/second, `every: 10` receives `1.0`. No gameplay systems are registered
-by the viewer yet.
+at 10 ticks/second, `every: 10` receives `1.0`. The solar demo uses 30 ticks/second
+and registers a simple orbit animation system.
 
 ```csharp
 using Chippy.Simulation;
@@ -81,8 +85,8 @@ window thread briefly. Camera controls continue independently. There is no comma
 
 `RenderWorld` owns two Arch worlds: the published world being drawn and a world for
 preparing the next publication. Preparation rebuilds a trimmed world containing only
-renderable `Transform`, `MeshRenderer`, and `SourceEntity` components. Mesh assets stay
-shared. Transform world matrices are resolved before copying; copied parents are
+renderable `Transform`, `MeshRenderer`/`LineRenderer`, and `SourceEntity` components.
+Mesh assets and immutable line positions stay shared. Transform world matrices are resolved before copying; copied parents are
 cleared, and rendering uses those resolved matrices without another transform update.
 `SourceEntity.Entity` refers to the original simulation entity, including its version;
 render-world IDs are allocated normally. Deleted entities and disabled renderers
@@ -95,7 +99,7 @@ snapshot worlds, and disabling publishing releases them after a held tick is dra
 is null in live mode.
 
 Publication swaps the two worlds on the window thread between draws, after the
-worker finishes. There is no extra acquire step or swap lock. `MeshRenderSystem.Draw(world)`
+worker finishes. There is no extra acquire step or swap lock. `SceneRenderSystem.Draw(world, viewportSize)`
 queries either the published world or the simulation world directly in live mode.
 Treat `viewer.RenderWorld` as read-only and obtain it for each draw; do not retain
 its entities or component references across publications, because the old world
@@ -132,10 +136,12 @@ interfaces. CPU mesh assets remain shared C# objects.
 | Type | Purpose |
 | --- | --- |
 | `Transform` | Parent entity, local position, quaternion rotation, scale, and the resolved world matrix. |
-| `MeshRenderer` | A shared CPU mesh reference, tint, and `Enabled` state. |
+| `MeshRenderer` | A shared CPU mesh reference, tint, `Enabled` and `Unlit` state. |
+| `LineRenderer` | Immutable local points, color, loop and enabled state. |
+| `Name` | A readable entity name for the inspector. |
 | `SourceEntity` | On published copies, a reference to the original simulation entity. |
 | `TransformSystem` | Resolves parent hierarchies into world matrices. |
-| `MeshRenderSystem` | Queries renderable entities and submits them to an injected `IRenderSystem`. |
+| `SceneRenderSystem` | Queries renderable meshes/lines and submits them to an injected `IRenderSystem`. |
 
 ```csharp
 using System.Numerics;
@@ -158,7 +164,7 @@ var owner = entity.World; // C# 14 extension property, available through Chippy.
 
 // Systems receive the actual Arch world; there is no generic ECS adapter.
 var transforms = new TransformSystem(world);
-var meshes = new MeshRenderSystem(renderer); // An initialized IRenderSystem.
+var scene = new SceneRenderSystem(renderer); // An initialized IRenderSystem.
 
 // Mutate components directly; do not retain refs across structural world changes.
 ref var transform = ref entity.Get<Transform>();
@@ -168,7 +174,7 @@ transform.LocalEulerAngles = new(0, 45, 0);
 // Per frame, after gameplay/simulation and inspector edits:
 transforms.Update();
 renderer.BeginFrame(view, projection);
-meshes.Draw(world);
+scene.Draw(world, new Vector2(1280, 720));
 ```
 
 The caller owns and disposes the world and renderer. Give each tick or UI pass
@@ -226,14 +232,14 @@ children first. Parenting affects transforms; renderer enabled state is per enti
 
 ## Rendering and backend switching
 
-`MeshRenderSystem` queries `Transform` and `MeshRenderer`. It draws
+`SceneRenderSystem` queries `Transform` with `MeshRenderer` or `LineRenderer`. It draws
 entities with an enabled renderer and a non-null mesh using their world matrix and
 tint. Adding/removing components or entities changes the next draw automatically.
 The system filters disabled renderers and missing meshes, then passes both components
 directly to `IRenderSystem.DrawMesh(in Transform, in MeshRenderer)`. Backend methods
 receive the full components, including the shared mesh, world matrix, and tint.
 
-`IRenderSystem` supplies `BeginFrame`, `DrawMesh`, and `ReleaseMesh`. The concrete
+`IRenderSystem` supplies `BeginFrame`, `DrawMesh`, `DrawPrimitives`, and `ReleaseMesh`. The concrete
 backends own shaders/effects and GPU buffers; neither stores the scene. Each backend
 uploads a shared mesh once and reuses its buffers across entities. Each submesh still
 issues a draw call per entity; hardware instancing is not implemented.
@@ -254,6 +260,40 @@ Matrices use the System.Numerics row-vector convention and a `[0, 1]` projection
 depth range. BRUTAL converts depth for OpenGL internally. The backends share geometry
 and controls but currently have different lighting/color output.
 
+## Primitives and procedural audio
+
+`Mesh.CreateCube`, `CreateSphere`, `CreateCapsule`, `CreateCylinder`, `CreatePlane`
+and `CreateQuad` create the standard mesh shapes. `CreateCone`, `CreateFrustum`,
+`CreatePrism(sides: 3)` and `CreateTorus` cover additional common shapes. Round
+solids use the Y axis; the quad faces +Z and the plane faces +Y. Meshes contain
+positions and normals, without UVs/textures. Reuse each mesh across entities.
+
+```csharp
+var cube = Mesh.CreateCube();
+world.Create(new Transform(), new MeshRenderer(cube));
+world.Create(new Transform(), LineRenderer.Circle(5, Vector4.One));
+```
+
+`PrimitiveBatch` draws world-space lines, polylines, circles, wire spheres/boxes
+and triangles, plus pixel-space lines, rectangles, circles and triangles. `Vector3`
+overloads use world coordinates; `Vector2` overloads use framebuffer pixels from
+the top-left. 3D lines are one pixel wide; 2D lines support thickness. Filled 2D
+shapes use triangles. Work is batched per topology, with 2D drawn over the scene.
+`ViewerState.DrawOverlay` receives the rendered world, batch and viewport size;
+use that world for scene reads so publishing remains safe.
+
+`AudioClip.Generate(duration, sample)` creates mono PCM from a function of time;
+`AudioClip.Tone(frequency)` supplies a simple sine tone. `AudioSystem` supports
+one-shot effects with pitch/pan, looping music, pause/resume/stop and separate
+master/music/effect volumes. The demo's **Procedural audio** section plays a
+generated ambient chord or chime; playback starts only when requested.
+
+Audio uses an independent OpenAL context from MonoGame's existing native dependency,
+so renderer switches preserve playback. No audio files or new packages are needed.
+`Program` owns audio outside the backend loop. Call its API on the window thread;
+`Update` reclaims finished one-shots. If no output device is available, graphics
+still work and the panel reports the audio error.
+
 ## Input and project structure
 
 Both window hosts implement `IInputSystem`. Shared `ModelViewer.Update` owns camera
@@ -266,6 +306,8 @@ owns native events, clearing, viewport changes, presentation, and ImGui renderin
 - `Systems`: transform hierarchy resolution and parenting validation.
 - `Simulation`: fixed-tick scheduling and the simulation system interface.
 - `Models`: shared CPU mesh assets, glTF import, and bounds.
+- `Audio`: procedural PCM clips and playback, independent of the renderer.
+- `Demos`: the schematic solar-system scene and orbit animation.
 - `Rendering`: renderer interface, world mesh query, matrix helpers, and orbit camera.
 - `Rendering/RenderWorld.cs`: trimmed render-world preparation and publication.
 - `Input`: shared key codes, input interface, and ImGui key conversions.
@@ -292,17 +334,14 @@ Build, or run a three-frame rendering/UI/GPU-sharing check that closes itself:
 
 ```powershell
 dotnet build Chippy.slnx
-dotnet run --project Tests/Chippy.Tests.csproj
-dotnet run --project Tests/Chippy.Tests.csproj -- --native
+dotnet run -- --renderer=brutal --smoke-test
+dotnet run -- --renderer=monogame --smoke-test
 dotnet run -- --renderer=brutal --model-demo --smoke-test
 dotnet run -- --renderer=monogame --model-demo --smoke-test
 ```
 
-The console checks use no additional test-framework packages and cover tick cadence/debt, worker/world isolation,
-render-world isolation/source links, preemptive deadlines, held edits, mode changes, manual stepping,
-worker failures, and redraw pacing. `--native` checks both backends drawing models
-and reusing completed ImGui output during a deliberately blocked tick, then joining
-that worker on exit.
+The optional smoke mode checks visible geometry, ImGui output and shared GPU mesh uploads,
+then closes the window after three frames.
 
 Built with [Arch](https://github.com/genaray/Arch),
 [MonoGame](https://monogame.net/), and [BRUTAL](https://github.com/ahwootech/BRUTAL).

@@ -5,6 +5,7 @@ using Arch.Core.Extensions;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using Chippy.Components;
+using Chippy.Audio;
 using Chippy.Models;
 
 namespace Chippy.Viewer;
@@ -22,6 +23,7 @@ public class ViewerPanel : IDisposable
     private bool disposed;
 
     public bool WantsKeyboard => ImGui.GetIO().WantCaptureKeyboard;
+    public bool WantsMouse => ImGui.GetIO().WantCaptureMouse;
     public bool HasPendingInput => context.InputEventsQueue.Count > 0;
     public bool HasDrawData { get; private set; }
 
@@ -83,19 +85,22 @@ public class ViewerPanel : IDisposable
 
             DrawRendererControls();
             DrawSimulationControls();
+            DrawAudioControls();
             // A manual tick can create or destroy entities.
             RefreshEntities();
             ImGui.Text($"{entities.Count:N0} entities · {meshes.Count:N0} shared meshes");
             changed = DrawEntityControls();
 
             ImGui.SeparatorText("Camera"u8);
+            ImGui.Checkbox("Follow selected (F)"u8, ref state.FollowSelected);
             ImGui.SliderAngle("Yaw"u8, ref state.Camera.Yaw, -180, 180, "%.0f deg"u8, ImGuiSliderFlags.AlwaysClamp);
             ImGui.SliderAngle("Pitch"u8, ref state.Camera.Pitch, -80, 80, "%.0f deg"u8, ImGuiSliderFlags.AlwaysClamp);
-            ImGui.SliderFloat("Distance"u8, ref state.Camera.Distance, 1.5f, 20f, "%.2f"u8, ImGuiSliderFlags.AlwaysClamp);
+            ImGui.SliderFloat("Distance"u8, ref state.Camera.Distance, 0.5f, 200f, "%.2f"u8, ImGuiSliderFlags.AlwaysClamp);
             if (ImGui.Button("Reset camera"u8))
             {
                 state.Camera.Reset();
                 state.AutoRotate = false;
+                state.FollowSelected = false;
             }
             ImGui.Checkbox("Auto rotate"u8, ref state.AutoRotate);
 
@@ -103,7 +108,9 @@ public class ViewerPanel : IDisposable
             ImGui.Checkbox("Wireframe"u8, ref state.Wireframe);
             EditColor("Background"u8, ref state.Background);
             ImGui.Separator();
-            ImGui.TextWrapped("Arrows: orbit · +/-: zoom · Esc: close"u8);
+            ImGui.TextWrapped("Middle drag: orbit · Shift + middle drag: pan · Wheel / +/-: zoom"u8);
+            ImGui.TextWrapped("WASD: move · Space/Ctrl: up/down · Shift: faster · F: follow selected"u8);
+            ImGui.TextWrapped("Arrows: orbit · Esc: close"u8);
             ImGui.TextWrapped("Click the scene to use camera shortcuts."u8);
         }
         ImGui.End();
@@ -176,9 +183,13 @@ public class ViewerPanel : IDisposable
             state.SelectedEntity = entities[0];
 
         ImGui.SeparatorText("Scene entities"u8);
-        foreach (var candidate in entities)
-            if (ImGui.Selectable($"Entity {candidate.Id}", candidate == state.SelectedEntity))
-                state.SelectedEntity = candidate;
+        if (ImGui.BeginCombo("Selected"u8, EntityLabel(state.SelectedEntity.Value)))
+        {
+            foreach (var candidate in entities)
+                if (ImGui.Selectable(EntityLabel(candidate), candidate == state.SelectedEntity))
+                    state.SelectedEntity = candidate;
+            ImGui.EndCombo();
+        }
 
         var entity = state.SelectedEntity.Value;
         ref var transform = ref entity.Get<Transform>();
@@ -193,28 +204,69 @@ public class ViewerPanel : IDisposable
         changed |= DragVector3("Local scale"u8, ref transform.LocalScale, 0.01f, 0.01f, 100f);
 
         ref var renderer = ref entity.TryGetRef<MeshRenderer>(out var hasRenderer);
-        if (!hasRenderer)
-            return changed;
-        if (renderer.SharedMesh is { } mesh)
-            ImGui.Text($"{mesh.SubMeshes.Count:N0} submeshes · {mesh.TriangleCount:N0} triangles");
-        changed |= ImGui.Checkbox("Enabled"u8, ref renderer.Enabled);
-        changed |= EditColor("Tint"u8, ref renderer.Tint);
+        if (hasRenderer)
+        {
+            if (renderer.SharedMesh is { } mesh)
+                ImGui.Text($"{mesh.SubMeshes.Count:N0} submeshes · {mesh.TriangleCount:N0} triangles");
+            changed |= ImGui.Checkbox("Mesh enabled"u8, ref renderer.Enabled);
+            changed |= ImGui.Checkbox("Unlit"u8, ref renderer.Unlit);
+            changed |= EditColor("Tint"u8, ref renderer.Tint);
+        }
+        ref var line = ref entity.TryGetRef<LineRenderer>(out var hasLine);
+        if (hasLine)
+        {
+            ImGui.Text($"{line.Positions.Length:N0} line points");
+            changed |= ImGui.Checkbox("Line enabled"u8, ref line.Enabled);
+            changed |= ImGui.Checkbox("Loop"u8, ref line.Loop);
+            changed |= EditColor("Line color"u8, ref line.Color);
+        }
         return changed;
     }
 
     private bool DrawParentControls(Entity entity, Entity? parent)
     {
-        if (!ImGui.BeginCombo("Parent"u8, parent is { } current ? $"Entity {current.Id}" : "None"))
+        if (!ImGui.BeginCombo("Parent"u8, parent is { } current ? EntityLabel(current) : "None"))
             return false;
         var changed = false;
         if (ImGui.Selectable("None"u8, parent is null))
             changed |= entity.TrySetParent(null);
         foreach (var candidate in entities)
             if (entity.CanSetParent(candidate)
-                && ImGui.Selectable($"Entity {candidate.Id}", candidate == parent))
+                && ImGui.Selectable(EntityLabel(candidate), candidate == parent))
                 changed |= entity.TrySetParent(candidate);
         ImGui.EndCombo();
         return changed;
+    }
+
+    private static string EntityLabel(Entity entity) => entity.TryGet<Name>(out var name)
+        ? $"{name.Value}##{entity.Id}" : $"Entity {entity.Id}";
+
+    private void DrawAudioControls()
+    {
+        if (state.Audio is not { } audio || !ImGui.CollapsingHeader("Procedural audio"u8)) return;
+        if (!audio.IsAvailable) { ImGui.TextWrapped(audio.Error ?? "Audio unavailable."); return; }
+        var master = audio.MasterVolume;
+        var music = audio.MusicVolume;
+        var effects = audio.EffectsVolume;
+        if (ImGui.SliderFloat("Master volume"u8, ref master, 0, 1)) audio.MasterVolume = master;
+        if (ImGui.SliderFloat("Music volume"u8, ref music, 0, 1)) audio.MusicVolume = music;
+        if (ImGui.SliderFloat("Effects volume"u8, ref effects, 0, 1)) audio.EffectsVolume = effects;
+        if (state.MusicClip is { } track)
+        {
+            if (audio.MusicState == PlaybackState.Playing)
+            {
+                if (ImGui.Button("Pause ambient"u8)) audio.PauseMusic();
+            }
+            else if (ImGui.Button("Play ambient"u8))
+            {
+                if (audio.MusicState == PlaybackState.Paused) audio.ResumeMusic();
+                else audio.PlayMusic(track);
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Stop"u8)) audio.StopMusic();
+        }
+        if (state.EffectClip is { } chime && ImGui.Button("Play chime"u8)) audio.PlayOneShot(chime);
+        ImGui.TextWrapped("Synthesized in C#; no audio files. Playback continues across renderer switches."u8);
     }
 
     private static bool DragVector3(ReadOnlySpan<byte> label, ref Vector3 value, float speed, float min = 0, float max = 0)

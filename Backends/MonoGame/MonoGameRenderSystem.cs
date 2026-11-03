@@ -12,6 +12,8 @@ public class MonoGameRenderSystem : IRenderSystem
     private readonly GraphicsDevice device;
     private readonly Dictionary<Mesh, MonoGameMesh[]> uploaded = new(ReferenceEqualityComparer.Instance);
     private readonly BasicEffect effect;
+    private readonly MonoGamePrimitives primitives;
+    private Matrix4x4 viewProjection;
     private readonly RasterizerState solid = new() { CullMode = CullMode.None };
     private readonly RasterizerState wireframe = new() { CullMode = CullMode.None, FillMode = FillMode.WireFrame };
     private bool disposed;
@@ -21,6 +23,7 @@ public class MonoGameRenderSystem : IRenderSystem
     {
         ArgumentNullException.ThrowIfNull(device);
         this.device = device;
+        primitives = new(device);
         effect = new BasicEffect(device)
         {
             LightingEnabled = true,
@@ -40,6 +43,7 @@ public class MonoGameRenderSystem : IRenderSystem
         device.RasterizerState = wireframe ? this.wireframe : solid;
         effect.View = view.ToXna();
         effect.Projection = projection.ToXna();
+        viewProjection = view * projection;
     }
 
     public void DrawMesh(in Transform transform, in MeshRenderer meshRenderer)
@@ -66,6 +70,7 @@ public class MonoGameRenderSystem : IRenderSystem
             }
         }
         effect.World = matrix.ToXna();
+        effect.LightingEnabled = !meshRenderer.Unlit;
         foreach (var gpuMesh in meshes)
         {
             var color = gpuMesh.Color * meshRenderer.Tint;
@@ -89,6 +94,12 @@ public class MonoGameRenderSystem : IRenderSystem
         return true;
     }
 
+    public void DrawPrimitives(ReadOnlySpan<PrimitiveVertex> vertices, PrimitiveTopology topology, bool screenSpace = false)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        primitives.Draw(vertices, topology, screenSpace ? Matrix4x4.Identity : viewProjection, screenSpace);
+    }
+
     public void Dispose()
     {
         if (disposed)
@@ -97,6 +108,7 @@ public class MonoGameRenderSystem : IRenderSystem
             Array.ForEach(meshes, mesh => mesh.Dispose());
         uploaded.Clear();
         effect.Dispose();
+        primitives.Dispose();
         wireframe.Dispose();
         solid.Dispose();
         disposed = true;

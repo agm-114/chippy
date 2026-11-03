@@ -1,4 +1,5 @@
 using Arch.Core;
+using Arch.Core.Extensions;
 using Chippy.Components;
 using Chippy.Systems;
 
@@ -8,7 +9,7 @@ namespace Chippy.Rendering;
 public class RenderWorld(World source) : IDisposable
 {
     private readonly TransformSystem transforms = new(source);
-    private readonly QueryDescription query = new QueryDescription().WithAll<Transform, MeshRenderer>();
+    private readonly QueryDescription query = new QueryDescription().WithAll<Transform>();
     private World prepared = World.Create();
     private long? preparedTick;
     public World World { get; private set; } = World.Create();
@@ -20,12 +21,16 @@ public class RenderWorld(World source) : IDisposable
         preparedTick = null;
         transforms.Update();
         prepared.Clear();
-        source.Query(in query, (Entity entity, ref Transform transform, ref MeshRenderer renderer) =>
+        source.Query(in query, (Entity entity, ref Transform transform) =>
         {
-            if (!renderer.Enabled || renderer.SharedMesh is null) return;
+            var hasMesh = entity.TryGet<MeshRenderer>(out var renderer) && renderer.IsRenderable;
+            var hasLine = entity.TryGet<LineRenderer>(out var line) && line.IsRenderable;
+            if (!hasMesh && !hasLine) return;
             var copy = transform;
             copy.Parent = null; // LocalToWorldMatrix is resolved; rendering never follows simulation parents.
-            prepared.Create(copy, renderer, new SourceEntity(entity));
+            var target = prepared.Create(copy, new SourceEntity(entity));
+            if (hasMesh) prepared.Add(target, renderer);
+            if (hasLine) prepared.Add(target, line);
         });
         preparedTick = tick;
     }

@@ -9,7 +9,7 @@ namespace Chippy.Models;
 public record struct Vertex(Vector3 Position, Vector3 Normal);
 public record SubMesh(Vertex[] Vertices, uint[] Indices, Vector4 Color);
 
-public class Mesh(List<SubMesh> meshes)
+public partial class Mesh(List<SubMesh> meshes)
 {
     public IReadOnlyList<SubMesh> SubMeshes { get; } = meshes;
     public Bounds Bounds { get; } = CalculateBounds(meshes);

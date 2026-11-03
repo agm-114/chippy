@@ -1,0 +1,1 @@
+- [ ] Add a lightweight ImGui profiler once simulation systems exist, measuring tick/system, render-world preparation, rendering/UI, missed deadlines, and allocations.
