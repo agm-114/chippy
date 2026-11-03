@@ -1,0 +1,562 @@
+<!-- architecture-source:start -->
+<div id="sim-render-architectures">
+  <div class="heading">
+    <h2>Simulation, rendering &amp; entity edits</h2>
+    <span class="text-small text-muted">Illustrative timings</span>
+  </div>
+  <div class="viz-controls">
+    <label class="form-label" for="sra-model">Architecture
+      <select id="sra-model" class="form-select">
+        <option value="current" selected>Chippy — main-thread world</option>
+        <option value="conquer">Conquer-Space — normal tick mode</option>
+      </select>
+    </label>
+  </div>
+  <label class="form-check form-switch">
+    <input id="sra-publishing" class="form-check-input" type="checkbox" checked>
+    <span class="form-check-label">Publish render data · separate render thread</span>
+  </label>
+  <label class="form-check form-switch">
+    <input id="sra-preemptive" class="form-check-input" type="checkbox" disabled>
+    <span class="form-check-label">Preemptive ticking · compute one tick ahead</span>
+  </label>
+  <div class="viz-controls">
+    <label class="form-label" for="sra-fps"><span id="sra-fps-label">Target framerate</span> <output id="sra-fps-value" class="tabular-nums">71 FPS</output>
+      <input id="sra-fps" class="form-range" type="range" min="15" max="120" step="1" value="71">
+    </label>
+    <label id="sra-tps-control" class="form-label" for="sra-tps">Target tick rate <output id="sra-tps-value" class="tabular-nums">10 ticks/s</output>
+      <input id="sra-tps" class="form-range" type="range" min="5" max="30" step="1" value="10">
+    </label>
+    <label id="sra-conquer-control" class="form-label" for="sra-conquer-interval" hidden>Tick interval · normal mode
+      <select id="sra-conquer-interval" class="form-select">
+        <option value="1000">1000 ms · 1 tick/s requested</option>
+        <option value="500">500 ms · 2 ticks/s requested</option>
+        <option value="333">333 ms · ≈3 ticks/s requested</option>
+        <option value="100" selected>100 ms · 10 ticks/s requested</option>
+        <option value="50">50 ms · 20 ticks/s requested</option>
+        <option value="10">10 ms · 100 ticks/s requested</option>
+        <option value="1">1 ms · 1000 ticks/s requested</option>
+      </select>
+    </label>
+  </div>
+  <div class="viz-controls">
+    <label class="form-label" for="sra-load">Simulation workload <output id="sra-load-value" class="tabular-nums">1×</output>
+      <input id="sra-load" class="form-range" type="range" min="0.25" max="2.5" step="0.25" value="1">
+    </label>
+  </div>
+  <div class="legend viz-row text-small">
+    <span><i class="line-key tick-key"></i><span id="sra-tick-guides">Target ticks</span></span>
+    <span><i class="line-key frame-key"></i><span id="sra-frame-guides">Render deadlines</span></span>
+  </div>
+  <div class="legend viz-row text-small">
+    <span><i class="swatch sim"></i>Simulation work</span>
+    <span><i class="swatch render"></i>Render work · 6 ms</span>
+    <span><i class="swatch edit"></i>Entity edit · 2 ms</span>
+    <span id="sra-redraw-legend">R · UI-triggered redraw</span>
+    <span><i class="swatch wait"></i>Waiting</span>
+    <span id="sra-publish-legend" hidden><i class="swatch publish"></i>Prepare render data · 2 ms</span>
+  </div>
+  <div id="sra-threads" class="text-small"></div>
+  <div id="sra-chart"><svg role="img" aria-labelledby="sra-title sra-desc"><title id="sra-title">Simulation and rendering on a shared time axis</title><desc id="sra-desc"></desc></svg></div>
+  <div id="sra-metric" class="tabular-nums" aria-live="polite"></div>
+  <div id="sra-assumption" class="text-small text-muted"></div>
+  <div id="sra-source" class="text-small" hidden><a href="https://github.com/Conquer-Space/Conquer-Space/blob/74b678fbee29b3d4482405368655857ba64699c2/src/engine/application.cpp#L264" target="_blank" rel="noopener noreferrer">Frame loop</a> · <a href="https://github.com/Conquer-Space/Conquer-Space/blob/74b678fbee29b3d4482405368655857ba64699c2/src/client/scenes/universe/universescene.cpp#L151" target="_blank" rel="noopener noreferrer">Tick timing</a> · <a href="https://github.com/Conquer-Space/Conquer-Space/blob/74b678fbee29b3d4482405368655857ba64699c2/src/engine/glfwwindow.cpp#L193" target="_blank" rel="noopener noreferrer">VSync and input polling</a> · <a href="https://github.com/Conquer-Space/Conquer-Space/blob/74b678fbee29b3d4482405368655857ba64699c2/src/client/components/clientctx.h#L28" target="_blank" rel="noopener noreferrer">Tick speeds</a></div>
+</div>
+<style>
+  #sim-render-architectures { display:grid; gap:calc(var(--font-size-base) * 1); color:var(--foreground); }
+  #sim-render-architectures .heading { display:grid; gap:calc(var(--font-size-base) * .25); padding-inline-end:90px; }
+  #sim-render-architectures .legend { gap:calc(var(--font-size-base) * 1.2); }
+  #sim-render-architectures .legend span { display:inline-flex; align-items:center; gap:calc(var(--font-size-base) * .4); }
+  #sim-render-architectures [hidden], #sim-render-architectures .legend span[hidden] { display:none; }
+  #sim-render-architectures .swatch { display:inline-block; width:12px; height:12px; border-radius:2px; flex-shrink:0; }
+  #sim-render-architectures .line-key { display:inline-block; width:15px; height:0; flex-shrink:0; }
+  #sim-render-architectures .tick-key { border-top:1px dashed var(--blue); }
+  #sim-render-architectures .frame-key { border-top:1px solid var(--red); }
+  #sim-render-architectures .sim { background:var(--blue); }
+  #sim-render-architectures .render { background:var(--red); }
+  #sim-render-architectures .edit { background:var(--purple); }
+  #sim-render-architectures .wait { background:color-mix(in srgb,var(--foreground) 16%,transparent); }
+  #sim-render-architectures .publish { background:color-mix(in srgb,var(--blue) 45%,var(--foreground)); }
+  #sim-render-architectures #sra-chart { min-width:0; }
+  #sim-render-architectures svg { display:block; width:100%; overflow:visible; }
+  #sim-render-architectures svg text { fill:var(--foreground); font-size:12px; font-weight:400; }
+  #sim-render-architectures svg .grid { stroke:var(--border); stroke-width:1; }
+  #sim-render-architectures svg .baseline { stroke:var(--border); stroke-width:1; }
+  #sim-render-architectures svg .sim-work { fill:color-mix(in srgb,var(--blue) 72%,transparent); }
+  #sim-render-architectures svg .render-work { fill:var(--red); }
+  #sim-render-architectures svg .wait-work { fill:color-mix(in srgb,var(--foreground) 12%,transparent); }
+  #sim-render-architectures svg .publish-work { fill:color-mix(in srgb,var(--blue) 45%,var(--foreground)); }
+  #sim-render-architectures svg .edit-work { fill:var(--purple); }
+  #sim-render-architectures svg .world-write { fill:none; stroke:color-mix(in srgb,var(--purple) 60%,transparent); stroke-width:1; stroke-dasharray:4 4; }
+  #sim-render-architectures svg .publication { fill:none; stroke:var(--blue); stroke-width:1; stroke-dasharray:3 3; }
+  #sim-render-architectures svg .snapshot-read { fill:none; stroke:color-mix(in srgb,var(--blue) 65%,transparent); stroke-width:1; }
+  #sim-render-architectures svg .published-state { fill:color-mix(in srgb,var(--blue) 12%,transparent); }
+  #sim-render-architectures svg .tick-deadline { stroke:color-mix(in srgb,var(--blue) 50%,transparent); stroke-width:1; stroke-dasharray:4 4; }
+  #sim-render-architectures svg .render-deadline { stroke:color-mix(in srgb,var(--red) 20%,transparent); stroke-width:1; }
+  #sim-render-architectures svg .deadline { stroke:var(--muted-foreground); stroke-width:1; }
+  #sim-render-architectures output { margin-inline-start:calc(var(--font-size-base) * .4); }
+  #sim-render-architectures #sra-assumption { min-height:1em; }
+</style>
+<script>
+(function initialize() {
+  const root = document.getElementById('sim-render-architectures');
+  if (!root?.querySelector('#sra-source')) {
+    // Inline hosts may execute scripts before mounting the fragment's markup.
+    const mountObserver = new MutationObserver(() => {
+      if (!document.getElementById('sim-render-architectures')?.querySelector('#sra-source')) return;
+      mountObserver.disconnect();
+      initialize();
+    });
+    mountObserver.observe(document.documentElement, {childList:true,subtree:true});
+    return;
+  }
+  if (root.dataset.timelineReady === 'true') return;
+  const model = root.querySelector('#sra-model');
+  const fps = root.querySelector('#sra-fps');
+  const tps = root.querySelector('#sra-tps');
+  const conquerInterval = root.querySelector('#sra-conquer-interval');
+  const publishing = root.querySelector('#sra-publishing');
+  const preemptive = root.querySelector('#sra-preemptive');
+  let publishRequested = publishing.checked;
+  let preemptiveRequested = preemptive.checked;
+  const load = root.querySelector('#sra-load');
+  const chart = root.querySelector('#sra-chart');
+  const svg = chart.querySelector('svg');
+  const metric = root.querySelector('#sra-metric');
+  const assumption = root.querySelector('#sra-assumption');
+  const reducedMotion = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-reduced-motion: reduce)') : {matches:true};
+  const ns = 'http://www.w3.org/2000/svg';
+  const assumptions = {
+    current: 'Main-thread world · proposed event-driven ImGui edits; input polls precede ticks/frames; changes request a redraw',
+    conquer: '0 ms = first tick request · normal mode; frame checks elapsed > interval and resets timer · idealized VSync; synthetic work costs'
+  };
+  let previousPositions = new Map();
+  let drawPending = false;
+  let animatePending = false;
+  let observedWidth = -1;
+
+  function node(tag, attributes = {}, text = '') {
+    const element = document.createElementNS(ns, tag);
+    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
+    if (text) element.textContent = text;
+    return element;
+  }
+
+  function schedule() {
+    const period = 1000 / Number(fps.value);
+    const conquer = model.value === 'conquer';
+    const tickPeriod = conquer ? Number(conquerInterval.value) : 1000 / Number(tps.value);
+    // ManageTick divides in float seconds, then promotes the result to double.
+    const tickLength = conquer ? Math.fround(tickPeriod / 1000) * 1000 : tickPeriod;
+    const timeOrigin = conquer ? tickLength : 0;
+    const published = publishing.checked && !conquer;
+    const computeAhead = published && preemptive.checked;
+    const multiplier = Number(load.value);
+    const stepCount = Math.max(3, Math.ceil(200 / tickPeriod) + 1);
+    const simulations = Array.from({length:stepCount}, (_, index) => ({
+      type:'sim', id:index + 1, due:(index + (conquer ? 1 : 0)) * tickPeriod, duration:[60,12,52][index%3] * multiplier
+    }));
+    const edits = [36, 112, 172].map((due,index) => ({type:'edit',id:index+1,entity:(index+1)*101,due:due+timeOrigin,duration:2}));
+    let soloEnd = 0;
+    for (const job of simulations) soloEnd = Math.max(soloEnd, job.due) + job.duration + (published ? 2 : 0);
+    const horizon = Math.max(256 + timeOrigin, Math.ceil((soloEnd + 30) / period) * period + period);
+    let renders = [];
+    const publications = [];
+    const copies = [];
+    function drawConquerFrame(cursor, inputTime) {
+      // Input is acted on when this frame builds its ImGui widgets.
+      for (const edit of edits.filter(edit => edit.start === undefined && edit.due <= inputTime)) {
+        edit.start = cursor; edit.end = cursor + edit.duration;
+        edit.worldAt = edit.end;
+        cursor = edit.end;
+      }
+      // Conquer draws every loop and waits in SwapBuffers, without a render-deadline queue.
+      const render = {type:'render',id:renders.length+1,due:inputTime,requestedDue:inputTime,
+        frameStart:inputTime,skipped:0,duration:6,start:cursor,end:cursor+6,
+        presentAt:Math.ceil((cursor+6)/period-1e-9)*period};
+      renders.push(render);
+      return render.presentAt;
+    }
+
+    if (conquer) {
+      let cursor = 0, nextSim = 0, lastTick = 0;
+      while (cursor < horizon || nextSim < simulations.length || edits.some(edit => edit.start === undefined)) {
+        const frameStart = cursor;
+        // ManageTick resets last_tick to now, retaining no fixed-clock catch-up debt.
+        if (nextSim < simulations.length && cursor - lastTick > tickLength) {
+          const job = simulations[nextSim++];
+          job.due = lastTick + tickLength;
+          lastTick = cursor;
+          job.start = cursor; job.end = cursor + job.duration; cursor = job.end;
+        }
+        // OnFrame polls events after the previous swap. Events during this tick wait a frame.
+        cursor = drawConquerFrame(cursor, frameStart);
+      }
+    } else {
+      let now = 0, nextSim = 0, nextFrame = 0, tick = 0, committedTick = 0;
+      let worldJob = null, renderJob = null, candidate = null;
+      let needsPublish = false, needsRedraw = false, uiVersion = 0;
+      const pendingInput = () => edits.filter(edit => edit.start === undefined && edit.due <= now + 1e-9);
+      while (now < horizon || nextSim < simulations.length || worldJob || renderJob
+        || candidate || needsPublish || needsRedraw || edits.some(edit => edit.start === undefined)) {
+        if (renderJob && renderJob.end <= now + 1e-9) renderJob = null;
+        if (worldJob && worldJob.end <= now + 1e-9) {
+          if (worldJob.type === 'sim') { tick = worldJob.id; needsPublish = published; }
+          if (worldJob.type === 'ui') { uiVersion++; needsRedraw = true; needsPublish = published; }
+          worldJob = null;
+        }
+        const pending = pendingInput();
+        if (candidate && candidate.publishAt <= now + 1e-9 && !needsPublish && !pending.length
+          && !worldJob) {
+          candidate.published = now;
+          publications.push(candidate);
+          committedTick = candidate.tick;
+          candidate = null;
+        }
+        // Poll before starting ticks/frames. Input itself never mutates the live world mid-tick.
+        if (!worldJob && pending.length && (!renderJob || published)) {
+          // An idle-world UI edit invalidates an unpublished prepared packet.
+          if (candidate) { candidate.supersededAt = now; candidate = null; }
+          let cursor = now;
+          for (const edit of pending) {
+            edit.start = cursor; edit.end = cursor + edit.duration; edit.worldAt = edit.end;
+            edit.uiVersion = uiVersion+1;
+            cursor = edit.end;
+          }
+          worldJob = {type:'ui',start:now,end:cursor};
+        } else if (!worldJob && needsPublish) {
+          const target = computeAhead ? simulations[tick-1]?.due ?? 0 : 0;
+          const packet = {id:copies.length+1,type:'publish',start:now,end:now+2,
+            readyAt:now+2,publishAt:Math.max(now+2,target),target,tick,
+            edits:edits.filter(edit => edit.worldAt <= now).map(edit => edit.id)};
+          copies.push(packet);
+          candidate = packet;
+          worldJob = packet;
+          needsPublish = false;
+        }
+        const tickDue = simulations[nextSim]?.due ?? Infinity;
+        const frameDue = nextFrame * period;
+        const renderRequested = frameDue <= now + 1e-9 || needsRedraw;
+        const inputPending = pendingInput().length > 0;
+        const uiBlocked = (!published && inputPending) || worldJob?.type === 'ui'
+          || (needsRedraw && (needsPublish || worldJob?.type === 'publish'));
+        const canTick = computeAhead ? tick <= committedTick : tickDue <= now + 1e-9;
+        if (!worldJob && !inputPending && canTick && nextSim < simulations.length && (!renderJob || published)
+          && (published || !renderRequested || (!needsRedraw && tickDue <= frameDue))) {
+          const job = simulations[nextSim++];
+          job.start = now; job.end = now + job.duration; job.commitEnd = job.end;
+          worldJob = job;
+        }
+        if (!renderJob && renderRequested && !uiBlocked && (published || !worldJob)) {
+          const slot = Math.floor(now/period + 1e-9);
+          const packet = publications.filter(packet => packet.published <= now + 1e-9).at(-1);
+          const job = {type:'render',id:renders.length+1,due:slot*period,
+            requestedDue:needsRedraw ? now : frameDue,skipped:Math.max(0,slot-nextFrame),
+            duration:6,start:now,end:now+6,redraw:needsRedraw,uiVersion,snapshot:packet?.id ?? 0};
+          renders.push(job); renderJob = job;
+          nextFrame = slot+1;
+          needsRedraw = false;
+        }
+        // Only future events advance time; overdue work remains pending behind its dependency.
+        const future = [worldJob?.end,renderJob?.end,candidate?.publishAt,
+          ...edits.filter(edit => edit.start === undefined).map(edit => edit.due)];
+        if (!worldJob) future.push(tickDue);
+        if (!renderJob) future.push(nextFrame*period);
+        const next = Math.min(...future.filter(time => time > now + 1e-9));
+        if (!Number.isFinite(next)) break;
+        now = next;
+      }
+    }
+    if (conquer) {
+      // Rebase the view after scheduling; retain refresh phase and any frame already in flight.
+      for (const job of [...simulations,...renders,...edits])
+        for (const key of ['due','requestedDue','start','end','worldAt','frameStart','presentAt'])
+          if (Number.isFinite(job[key])) job[key] -= timeOrigin;
+      renders = renders.filter(render => render.presentAt > 0);
+      renders.forEach((render,index) => render.id = index+1);
+    }
+    for (const edit of edits) {
+      const packet = publications.find(packet => packet.edits.includes(edit.id));
+      const reader = renders.find(render => render.start >= (packet?.published ?? edit.worldAt));
+      edit.visibleAt = conquer ? reader?.presentAt : reader?.start;
+      if (!conquer) edit.uiVisibleAt = renders.find(render => render.uiVersion >= edit.uiVersion)?.start;
+    }
+    const presents = conquer ? renders.filter(r => r.presentAt > r.end).map(r => ({
+      type:'present',id:r.id,start:r.end,end:r.presentAt
+    })) : [];
+    const mainJobs = [...renders,...edits,...presents].sort((a,b) => a.start-b.start);
+    return {simulations, renders, edits, publications, copies, published, computeAhead, mainJobs,
+      worldJobs:[...simulations,...edits,...copies],period, tickPeriod, tickLength, timeOrigin, conquer,
+      end:Math.max(horizon-timeOrigin, ...simulations.map(s => s.end),
+        ...renders.map(r => r.presentAt ?? r.end),...copies.map(packet => packet.end),
+        ...publications.map(packet => packet.published))};
+  }
+
+  function draw(animate = false) {
+    publishing.disabled = model.value === 'conquer';
+    publishing.checked = !publishing.disabled && publishRequested;
+    preemptive.disabled = !publishing.checked;
+    preemptive.checked = !preemptive.disabled && preemptiveRequested;
+    const state = schedule();
+    const width = Math.max(280, chart.getBoundingClientRect().width);
+    const compact = width < 500;
+    const left = 96;
+    const right = width - 12;
+    const published = state.published;
+    const uiY = 65, simY = uiY + 88, dataY = simY + 80;
+    const renderY = published ? dataY + 80 : simY + 88;
+    const axisY = renderY + 77;
+    const height = axisY + 36;
+    const x = time => left + time / state.end * (right - left);
+    const format = value => Number(value.toFixed(1)).toString();
+    const positions = new Map();
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('height', String(height));
+    svg.replaceChildren(node('title', {id:'sra-title'}, 'Simulation, rendering, and user entity edits on a shared time axis'));
+    const architectureLabel = model.options[model.selectedIndex]?.textContent ?? 'Execution timeline';
+    svg.append(node('desc', {id:'sra-desc'}, `${architectureLabel}. ${fps.value} ${state.conquer ? 'Hz assumed display refresh' : 'target frames per second'}; ${format(state.tickPeriod)} ms tick interval. Dashed blue lines mark ${state.conquer ? 'tick eligibility after each timer reset' : 'target ticks'}; faint red lines mark ${state.conquer ? 'display refreshes' : 'render deadlines'}. Purple edits E1, E2, E3 target entities 101, 202, 303 in the live simulation world. R marks a render requested by completed UI changes. ${published ? 'Blue arrows publish completed world data; a separate renderer reads the latest completed version and prepared UI draw data. Input waiting for a busy simulation does not block published rendering. Active UI work and its changed-state handoff gate new frames.' : 'Rendering reads the live world.'} ${assumptions[model.value]}.`));
+
+    const firstRefresh = (state.period - state.timeOrigin % state.period) % state.period;
+    for(let time=firstRefresh;time<=state.end+.001;time+=state.period)
+      svg.append(node('line',{x1:x(time),x2:x(time),y1:52,y2:axisY-20,class:'render-deadline',
+        'data-tooltip':`${state.conquer ? 'Display refresh' : 'Render deadline'} ${format(time)} ms · ${fps.value} ${state.conquer ? 'Hz assumed' : 'FPS target'}`}));
+    const tickGuides = state.conquer
+      ? [...state.simulations.map(job => job.due), state.simulations.at(-1).start + state.tickLength]
+      : Array.from({length:Math.floor(state.end/state.tickPeriod)+1},(_,index) => index*state.tickPeriod);
+    for(const time of tickGuides.filter(time => time <= state.end+.001))
+      svg.append(node('line',{x1:x(time),x2:x(time),y1:52,y2:axisY-20,class:'tick-deadline',
+        'data-tooltip':`${state.conquer ? 'Tick eligible after' : state.computeAhead ? 'Tick publication target' : 'Target simulation tick'} ${format(time)} ms · ${format(state.tickPeriod)} ms interval`}));
+
+    const tickCount = compact ? 3 : 6;
+    for (let i = 0; i <= tickCount; i++) {
+      const time = state.end * i / tickCount;
+      const at = x(time);
+      svg.append(node('line', {x1:at, x2:at, y1:axisY-10, y2:axisY-5, class:'grid'}));
+      svg.append(node('text', {x:at, y:axisY + 6, 'text-anchor':i === 0 ? 'start' : i === tickCount ? 'end' : 'middle'}, format(time)));
+    }
+    svg.append(node('line', {x1:left, x2:right, y1:axisY - 10, y2:axisY - 10, class:'baseline'}));
+    svg.append(node('text', {x:(left + right) / 2, y:axisY + 31, 'text-anchor':'middle'}, 'Elapsed time (ms)'));
+    svg.append(node('text', {x:0,y:uiY+20}, 'ImGui edits'));
+    svg.append(node('text', {x:0,y:simY+20}, published ? 'World / sim' : 'Simulation'));
+    if(published)svg.append(node('text',{x:0,y:dataY+17},'Published data'));
+    svg.append(node('text', {x:0,y:renderY+20}, 'Render'));
+
+    for (const edit of published ? state.edits : []) {
+      svg.append(node('path', {class:'world-write',
+        d:`M ${x(edit.worldAt)} ${uiY+33} L ${x(edit.worldAt)} ${simY-3}`,
+        'data-tooltip':`ImGui directly writes E${edit.id} to entity ${edit.entity} in the live world at ${format(edit.worldAt)} ms`}));
+      svg.append(node('path', {class:'world-write',d:`M ${x(edit.worldAt)-3} ${simY-9} L ${x(edit.worldAt)} ${simY-3} L ${x(edit.worldAt)+3} ${simY-9}`}));
+    }
+
+    function bar(key, start, end, y, height, className, tooltip) {
+      if (end <= 0) return {x:left,width:0,y,height};
+      start = Math.max(0,start);
+      const geometry = {x:x(start), width:Math.max(.5, x(end) - x(start)), y, height};
+      const element = node('rect', {...geometry, rx:3, class:className, 'data-tooltip':tooltip});
+      svg.append(element);
+      const old = previousPositions.get(key);
+      if (animate && old && !reducedMotion.matches && typeof element.animate === 'function') {
+        try {
+          element.animate([
+            {x:`${old.x}px`, width:`${old.width}px`},
+            {x:`${geometry.x}px`, width:`${geometry.width}px`}
+          ], {duration:200, easing:'ease-out'});
+        } catch {
+          // Some inline hosts expose animate() without supporting SVG geometry.
+        }
+      }
+      positions.set(key, geometry);
+      return geometry;
+    }
+
+    function editLabels(entries, y) {
+      const groups = [];
+      for (const entry of entries.sort((a,b) => a.x-b.x)) {
+        const previous = groups.at(-1);
+        if (previous && entry.x-previous.at(-1).x < 35) previous.push(entry);
+        else groups.push([entry]);
+      }
+      for (const group of groups) {
+        const label = group.map(entry => `E${entry.id}`).join(', ');
+        const halfWidth = label.length*3.5;
+        const center = group.reduce((sum,entry) => sum+entry.x,0)/group.length;
+        svg.append(node('text',{x:Math.max(left+halfWidth,Math.min(right-halfWidth,center)),y,'text-anchor':'middle'},label));
+      }
+    }
+
+    if(published) {
+      const versions=[{id:0,published:0,tick:0,edits:[]},...state.publications];
+      for(let i=0;i<versions.length;i++) {
+        const version=versions[i];
+        const end=versions[i+1]?.published??state.end;
+        const applied=version.edits.map(id=>`E${id}`);
+        const geometry=bar(`data${version.id}`,version.published,end,dataY,26,'published-state',
+          `Published P${version.id} · completed tick S${version.tick} · includes ${applied.join(', ')||'no user edits yet'}`);
+        const label=geometry.width>110?`P${version.id} · S${version.tick}`:`P${version.id}`;
+        if(geometry.width>22)svg.append(node('text',{x:geometry.x+geometry.width/2,y:dataY+18,'text-anchor':'middle'},label));
+        if(version.id) {
+          const at=x(version.published);
+          svg.append(node('path',{class:'publication',d:`M ${at} ${simY+41} L ${at} ${dataY-3} M ${at-3} ${dataY-9} L ${at} ${dataY-3} L ${at+3} ${dataY-9}`,
+            'data-tooltip':`Publish P${version.id}: live world → published render data at ${format(version.published)} ms`}));
+        }
+        const reader=state.renders.find(render=>render.snapshot===version.id);
+        if(reader) {
+          const at=x(reader.start);
+          svg.append(node('path',{class:'snapshot-read',d:`M ${at} ${dataY+27} L ${at} ${renderY-3} M ${at-3} ${renderY-9} L ${at} ${renderY-3} L ${at+3} ${renderY-9}`,
+            'data-tooltip':`Renderer first reads published P${version.id} at ${format(reader.start)} ms`}));
+        }
+      }
+    }
+
+    for (const job of state.simulations) {
+      if (job.start > job.due) bar(`sw${job.id}`, job.due, job.start, simY + 15, 10, 'wait-work', `Simulation step ${job.id} waits ${format(job.start - job.due)} ms`);
+      const geometry = bar(`s${job.id}`, job.start, job.end, simY, 40, 'sim-work', `Simulation step ${job.id} · ${format(job.duration)} ms of work · starts ${format(job.start)} ms${state.computeAhead?` · publication target ${format(job.due)} ms`:''}`);
+      const label = geometry.width > 88 ? `S${job.id} · ${format(job.duration)} ms` : `S${job.id}`;
+      if (geometry.width > 20) svg.append(node('text', {x:geometry.x + geometry.width / 2, y:simY + 25, 'text-anchor':'middle'}, label));
+      else if (state.simulations.length <= 7)
+        svg.append(node('text', {x:geometry.x + geometry.width / 2, y:simY - 5, 'text-anchor':'middle'}, label));
+    }
+    for (const packet of state.copies) {
+      bar(`p${packet.id}`,packet.start,packet.end,simY,40,'publish-work',`Prepare P${packet.id} after S${packet.tick} · ready ${format(packet.readyAt)} ms · ${packet.supersededAt!==undefined?'superseded by a live-world UI edit':`published ${format(packet.published)} ms`} · 2 ms assumed copy`);
+      const heldUntil = packet.supersededAt ?? packet.published;
+      if (heldUntil > packet.readyAt + .001) {
+        const geometry = bar(`hold${packet.id}`,packet.readyAt,heldUntil,simY+15,10,'wait-work publication-hold',
+          `P${packet.id} ready at ${format(packet.readyAt)} ms · waits until ${format(heldUntil)} ms ${packet.supersededAt!==undefined?'then superseded':'to publish at its tick target'}`);
+        if (geometry.width > 42) svg.append(node('text',{x:geometry.x+geometry.width/2,y:simY+55,'text-anchor':'middle'},'Ready'));
+      }
+    }
+    for (const job of state.renders) {
+      if (job.due >= 0) svg.append(node('line', {x1:x(job.due), x2:x(job.due), y1:renderY + 38, y2:renderY + 45, class:'deadline'}));
+      if (job.start > job.requestedDue) bar(`rw${job.id}`, job.requestedDue, job.start, renderY + 15, 10, 'wait-work',
+        state.conquer ? `Frame update/UI takes ${format(job.start-job.requestedDue)} ms before drawing`
+          : `Frame pending for ${format(job.start - job.requestedDue)} ms · ${job.skipped} obsolete targets skipped`);
+      if (state.conquer && job.presentAt > job.end)
+        bar(`vs${job.id}`,job.end,job.presentAt,renderY+15,10,'wait-work',`SwapBuffers waits for assumed VSync at ${format(job.presentAt)} ms; input is polled afterward`);
+      let tooltip = state.conquer
+        ? `Frame ${job.id} · loop starts ${format(job.frameStart)} ms · draw starts ${format(job.start)} ms · swap completes ${format(job.presentAt)} ms`
+        : `Frame target ${format(job.due)} ms · starts ${format(job.start)} ms · 6 ms work · ${job.skipped} obsolete targets skipped`;
+      if (published) tooltip += ` · reads published P${job.snapshot}`;
+      if (job.redraw) tooltip += ' · UI-triggered render; repeated pending requests coalesced';
+      const geometry = bar(`r${job.id}`, job.start, job.end, renderY, 32, 'render-work', tooltip);
+      if (job.redraw) svg.append(node('text',{x:geometry.x+geometry.width/2,y:renderY-5,
+        'text-anchor':'middle','data-tooltip':'UI-triggered redraw'},'R'));
+    }
+    for (const edit of state.edits) {
+      svg.append(node('line',{x1:x(edit.due),x2:x(edit.due),y1:uiY+34,y2:uiY+41,class:'deadline'}));
+      if (edit.start > edit.due) bar(`uw${edit.id}`,edit.due,edit.start,uiY+11,10,'wait-work',`E${edit.id}: main-thread wait ${format(edit.start-edit.due)} ms`);
+      const tooltip=`E${edit.id} · entity ${edit.entity} · input at ${format(edit.due)} ms · live-world ImGui pass at ${format(edit.start)} ms · world updated ${format(edit.worldAt)} ms${state.computeAhead?` · UI feedback ${format(edit.uiVisibleAt)} ms; rendered world ${format(edit.visibleAt)} ms`:''}`;
+      bar(`ui${edit.id}`,edit.start,edit.end,uiY,32,'edit-work',tooltip);
+    }
+    editLabels(state.edits.map(edit=>({id:edit.id,x:x((edit.start+edit.end)/2)})),uiY+54);
+    previousPositions = positions;
+    const waits = state.renders.map(job => job.start - job.requestedDue);
+    const maxWait = Math.max(0, ...waits);
+    const skipped = state.renders.reduce((sum,job) => sum + job.skipped, 0);
+    const editLag = Math.max(...state.edits.map(edit => edit.worldAt-edit.due));
+    const redraws = state.renders.filter(job => job.redraw).length;
+    metric.textContent = state.conquer
+      ? `Tick check delay: ${format(Math.max(...state.simulations.map(s => s.start-s.due)))} ms max · edit → world: ${format(editLag)} ms max`
+      : `${redraws} UI redraws · ${skipped} missed targets skipped · edit → world: ${format(editLag)} ms max`;
+    assumption.textContent = assumptions[model.value] + (state.computeAhead
+      ? ' · One tick ahead; publication waits for its target. ImGui sees the working world ahead of displayed state.'
+      : published ? ' · While input waits on simulation, rendering reuses completed world/UI data.' : '');
+    root.querySelector('#sra-fps-label').textContent = state.conquer ? 'Assumed display refresh' : 'Target framerate';
+    root.querySelector('#sra-fps-value').textContent = `${fps.value} ${state.conquer ? 'Hz' : 'FPS'}`;
+    root.querySelector('#sra-tps-control').hidden = state.conquer;
+    root.querySelector('#sra-conquer-control').hidden = !state.conquer;
+    root.querySelector('#sra-frame-guides').textContent = state.conquer ? 'Display refreshes' : 'Render deadlines';
+    root.querySelector('#sra-tick-guides').textContent = state.conquer ? 'Tick eligibility' : state.computeAhead ? 'Tick publish targets' : 'Target ticks';
+    root.querySelector('#sra-tps-value').textContent = `${tps.value} ticks/s`;
+    root.querySelector('#sra-load-value').textContent = `${load.value}×`;
+    root.querySelector('#sra-publish-legend').hidden = !published;
+    root.querySelector('#sra-redraw-legend').hidden = state.conquer;
+    root.querySelector('#sra-threads').textContent = published
+      ? 'World + ImGui: one thread · Window/render: separate thread'
+      : 'All lanes share one main thread';
+    root.querySelector('#sra-source').hidden = model.value !== 'conquer';
+    root.dataset.architecture = model.value;
+    root.dataset.maxWait = String(maxWait);
+    root.dataset.skippedFrames = String(skipped);
+    root.dataset.edits = JSON.stringify(state.edits);
+    root.dataset.mainJobs = JSON.stringify(state.mainJobs);
+    root.dataset.simulations = JSON.stringify(state.simulations);
+    root.dataset.publications = JSON.stringify(state.publications.map(packet=>({...packet,at:packet.published,destination:`Published render data P${packet.id}`})));
+    root.dataset.publishing = String(published);
+    root.dataset.preemptive = String(state.computeAhead);
+    root.dataset.copies = JSON.stringify(state.copies);
+    root.dataset.renders = JSON.stringify(state.renders);
+    root.dataset.worldJobs = JSON.stringify(state.worldJobs);
+    root.dataset.targetFramerate = fps.value;
+    root.dataset.targetTickRate = String(1000/state.tickPeriod);
+    root.dataset.timeOrigin = String(state.timeOrigin);
+  }
+
+  function restore(saved) {
+    const state = saved?.modelContent ?? saved;
+    if (!state || typeof state !== 'object') return;
+    if (typeof state.architecture === 'string')
+      model.value = state.architecture === 'conquer' ? 'conquer' : 'current';
+    if (typeof state.publishRenderData === 'boolean') publishRequested = state.publishRenderData;
+    else if (state.architecture) publishRequested = state.architecture === 'snapshot';
+    preemptiveRequested = state.preemptiveTicking === true;
+    const restoredFps=Number.isFinite(state.targetFramerate)?state.targetFramerate:
+      Number.isFinite(state.renderInterval)&&state.renderInterval>0?1000/state.renderInterval:null;
+    if(restoredFps!==null)fps.value=String(Math.round(Math.min(120,Math.max(15,restoredFps))));
+    if(Number.isFinite(state.targetTickRate))tps.value=String(Math.round(Math.min(30,Math.max(5,state.targetTickRate))));
+    if ([1000,500,333,100,50,10,1].includes(state.conquerTickInterval)) conquerInterval.value = String(state.conquerTickInterval);
+    if (Number.isFinite(state.simulationWorkload)) load.value = String(Math.min(2.5, Math.max(.25, state.simulationWorkload)));
+  }
+
+  function save() {
+    try {
+      const host = window.openai;
+      if (typeof host?.setWidgetState !== 'function') return;
+      // Preserve the preference across Conquer, whose effective setting is always off.
+      Promise.resolve(host.setWidgetState({modelContent:{architecture:model.value,publishRenderData:publishRequested,preemptiveTicking:preemptiveRequested,targetFramerate:Number(fps.value),targetTickRate:Number(tps.value),conquerTickInterval:Number(conquerInterval.value),simulationWorkload:Number(load.value)}})).catch(() => {});
+    } catch {
+      // State persistence is optional; it must not prevent local interaction.
+    }
+  }
+
+  function requestDraw(animate = false) {
+    animatePending ||= animate;
+    if (drawPending) return;
+    drawPending = true;
+    const run = () => {
+      drawPending = false;
+      const animate = animatePending;
+      animatePending = false;
+      draw(animate);
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else window.setTimeout(run, 16);
+  }
+
+  try { restore(window.openai?.widgetState); } catch { /* Start with defaults if host state is unavailable. */ }
+  for (const control of [model, publishing, preemptive, fps, tps, conquerInterval, load]) {
+    control.addEventListener('input', () => {
+      if (control === publishing && !publishing.disabled) publishRequested = publishing.checked;
+      if (control === preemptive && !preemptive.disabled) preemptiveRequested = preemptive.checked;
+    });
+    control.addEventListener('input', () => requestDraw(true));
+    control.addEventListener('change', () => { requestDraw(true); save(); });
+  }
+  window.addEventListener('openai:set_globals', event => {
+    const saved = event.detail?.globals?.widgetState;
+    if (saved) { restore(saved); requestDraw(true); }
+  });
+  if (typeof window.ResizeObserver === 'function') {
+    new window.ResizeObserver(() => {
+      const width = Math.round(chart.getBoundingClientRect().width * 100) / 100;
+      if (width === observedWidth) return;
+      observedWidth = width;
+      // Painting outside the observer avoids resize/auto-height feedback loops.
+      requestDraw(false);
+    }).observe(chart);
+  } else window.addEventListener('resize', () => requestDraw(false));
+  draw(false);
+  root.dataset.timelineReady = 'true';
+})();
+</script>
+<!-- architecture-source:end -->
