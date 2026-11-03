@@ -141,6 +141,4 @@ Its negative speed entries run multiple ticks per frame and are outside this exp
 labeled normal-mode entry. Links under the chart point to the frame loop, tick logic,
 window integration, and speed table.
 
-Run the C# scheduling/ownership checks with `dotnet run --project Tests/Chippy.Tests.csproj`.
-Add `-- --native` to verify both native backends reusing completed UI/world data
-during a blocked tick. The diagram checks above validate the illustrative model separately.
+The diagram checks above validate the illustrative model separately.

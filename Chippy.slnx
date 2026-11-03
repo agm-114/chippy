@@ -1,4 +1,3 @@
 <Solution>
   <Project Path="Chippy.csproj" />
-  <Project Path="Tests/Chippy.Tests.csproj" />
 </Solution>
