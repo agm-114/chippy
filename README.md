@@ -9,6 +9,8 @@ dotnet run -- --renderer=brutal
 dotnet run -- --renderer=monogame
 dotnet run -- "C:\Models\building.glb"
 dotnet run -- --model-demo
+dotnet run -- --preemptive-ticking
+dotnet run -- --no-publish-render-data
 ```
 
 The default model is `Assets/Bakery.gltf`. The demo creates two mesh entities
@@ -18,7 +20,109 @@ to move, rotate, or scale both models together.
 Use the arrow keys to orbit, `+`/`-` to zoom, and `Esc` to close. Camera shortcuts
 pause while the window is unfocused or ImGui captures keyboard input. The panel
 edits entity parenting, local transforms, renderer tint/enabled state, camera,
-wireframe mode, and background color.
+wireframe mode, target FPS, and background color. Simulation controls show the
+current tick and simulated time, with pause, speed, single-step, render-data publishing,
+and preemptive-ticking controls. Publishing defaults to on; preemptive ticking defaults to off.
+
+## Simulation scheduling
+
+`SimulationScheduler` advances a fixed clock independently of drawing. It defaults
+to 10 ticks per simulated second and runs systems sequentially in registration
+order. Implement `ISimulationSystem.Update(double deltaTime)` and register the
+system with `simulation.Add(system, every: 10)` to run it on ticks 10, 20, 30, etc.
+The interval is measured against the shared tick counter, including for systems
+registered later. Each call receives its scheduled interval in simulated seconds;
+at 10 ticks/second, `every: 10` receives `1.0`. No gameplay systems are registered
+by the viewer yet.
+
+```csharp
+using Chippy.Simulation;
+
+var simulation = new SimulationScheduler(ticksPerSecond: 10);
+simulation.Speed = 4;
+simulation.Advance(realDelta); // Unscaled elapsed wall time in seconds.
+simulation.Paused = true;
+simulation.Step();             // Exactly one tick, even while paused or at speed zero.
+```
+
+`Advance` returns the number of ticks executed. It runs at most 8 ticks per call
+by default (`maxTicksPerFrame` in the constructor), keeping remaining catch-up
+time for later updates rather than skipping ticks. Pausing or setting speed to zero
+freezes automatic advancement without accumulating paused wall time. Manual steps
+preserve any pending catch-up time. Tick rate and catch-up limit must be positive;
+speed and elapsed time must be finite and nonnegative. Register systems before the
+viewer starts. The scheduler is sequential: do not change it or access its world
+concurrently with a running tick.
+
+`ViewerState.Simulation` lives alongside the world, outside the renderer-switch
+loop, so its systems, time, pause state, and speed survive backend recreation.
+The shared `ModelViewer.Update` measures wall time with a monotonic clock,
+coordinates simulation, and updates the camera with a separately clamped frame delta.
+Both backends wake for the earlier of the next tick and frame deadline, sleeping
+for at most 10 ms between input polls while idle. `ViewerState.TargetFrameRate` defaults
+to 60 and can be changed in the panel. A late frame renders once in the current
+target interval; missed render targets are skipped. Simulation ticks keep their
+catch-up time. VSync is disabled so presentation does not intentionally wait for
+the display while a simulation tick is due; the driver/GPU can still block.
+
+BRUTAL calls `Update` after polling events; MonoGame suppresses `Draw` until a
+frame is due. Both use the same scheduling code. GPU/window calls and all ImGui calls
+stay on the window thread. With publishing enabled, one simulation tick and render-data
+preparation run on a worker task. Drawing reads the latest completed packet while that
+worker mutates the world. The viewer starts at most one tick per input-pump iteration;
+catch-up debt is retained, with an opportunity to process UI and draw between ticks.
+
+ImGui edits the actual Arch world between ticks. Backends collect native input while
+a tick runs, but defer widget code until it finishes. Meanwhile, presentation reuses
+the previous world packet and completed ImGui draw data. Input is handled at the next
+safe pump, before another tick; UI/world edits request an immediate redraw and repeated
+pending requests coalesce. A UI pass and preparation of its edited packet block that
+window thread briefly. Camera controls continue independently. There is no command queue.
+
+`RenderWorld` owns two Arch worlds: the published world being drawn and a world for
+preparing the next publication. Preparation rebuilds a trimmed world containing only
+renderable `Transform`, `MeshRenderer`, and `SourceEntity` components. Mesh assets stay
+shared. Transform world matrices are resolved before copying; copied parents are
+cleared, and rendering uses those resolved matrices without another transform update.
+`SourceEntity.Entity` refers to the original simulation entity, including its version;
+render-world IDs are allocated normally. Deleted entities and disabled renderers
+disappear from the next publication.
+
+The render-world object owns preparation readiness; publication consumes that ready
+world. It exists only while publishing is active. Starting in live mode creates no
+snapshot worlds, and disabling publishing releases them after a held tick is drained.
+`viewer.UsesPublishedData` reflects the active render-world object; `PublishedTick`
+is null in live mode.
+
+Publication swaps the two worlds on the window thread between draws, after the
+worker finishes. There is no extra acquire step or swap lock. `MeshRenderSystem.Draw(world)`
+queries either the published world or the simulation world directly in live mode.
+Treat `viewer.RenderWorld` as read-only and obtain it for each draw; do not retain
+its entities or component references across publications, because the old world
+becomes the next preparation target. The two world objects are reused; incremental
+entity synchronization is not implemented.
+Direct world changes outside registered systems/UI must go through
+`viewer.TryEditWorld(world => ...)`, on the window thread. It returns false while a tick
+task is outstanding; retain/retry the edit. Do not mutate the world or scheduler from
+other threads, or retain component references across structural changes.
+
+With **Preemptive ticking**, the worker starts the next tick early and prepares its
+packet, then holds publication until that tick's target. Only one unpublished tick is
+allowed. Late results publish as soon as the main pump observes completion. ImGui can
+edit the computed world while its packet is held; preparation is repeated for the
+same deadline. The UI can therefore show a working tick ahead of the displayed tick.
+Pausing, setting speed to zero, or manually stepping commits an already-computed tick;
+the first manual step consumes that tick rather than running it twice. These actions
+do not roll back completed work. Turning publishing off drains a held tick at its
+deadline before live drawing resumes. Preemptive ticking only takes effect with
+publishing on; the conflicting CLI flags are rejected.
+
+With publishing off, ticks, UI, transform resolution, and drawing share the window
+thread, so a long tick blocks presentation. Simulation continues while minimized.
+Disposal/backend switches join an outstanding worker before destroying its world or
+GPU resources. The new viewer captures the completed world; backend recreation time
+is excluded from its clock. For headless runs, use the scheduler directly with
+`Step()` or `Advance()`; it has no graphics dependency.
 
 ## Components and world
 
@@ -29,6 +133,7 @@ interfaces. CPU mesh assets remain shared C# objects.
 | --- | --- |
 | `Transform` | Parent entity, local position, quaternion rotation, scale, and the resolved world matrix. |
 | `MeshRenderer` | A shared CPU mesh reference, tint, and `Enabled` state. |
+| `SourceEntity` | On published copies, a reference to the original simulation entity. |
 | `TransformSystem` | Resolves parent hierarchies into world matrices. |
 | `MeshRenderSystem` | Queries renderable entities and submits them to an injected `IRenderSystem`. |
 
@@ -53,7 +158,7 @@ var owner = entity.World; // C# 14 extension property, available through Chippy.
 
 // Systems receive the actual Arch world; there is no generic ECS adapter.
 var transforms = new TransformSystem(world);
-var meshes = new MeshRenderSystem(world, renderer); // An initialized IRenderSystem.
+var meshes = new MeshRenderSystem(renderer); // An initialized IRenderSystem.
 
 // Mutate components directly; do not retain refs across structural world changes.
 ref var transform = ref entity.Get<Transform>();
@@ -63,11 +168,11 @@ transform.LocalEulerAngles = new(0, 45, 0);
 // Per frame, after gameplay/simulation and inspector edits:
 transforms.Update();
 renderer.BeginFrame(view, projection);
-meshes.Draw();
+meshes.Draw(world);
 ```
 
-The caller owns and disposes the world and renderer. Use the world on the scene
-thread; finish simulation jobs before editing or rendering it. GPU creation,
+The caller owns and disposes the world and renderer. Give each tick or UI pass
+exclusive world access; render only published data while a worker runs. GPU creation,
 drawing, release, and disposal happen on the graphics thread with its context or
 device available.
 
@@ -97,7 +202,7 @@ transforms with `new Transform()`; `default(Transform)` has zero scale/rotation.
 
 `LocalMatrix` is scale × rotation × translation. With System.Numerics row vectors,
 `LocalToWorldMatrix` is local × parent world. `TransformSystem.Update()` refreshes
-that derived matrix once before rendering; direct component changes become visible
+that derived matrix before preparing render data (or drawing in live mode); changes become visible
 on its next update. Each transform is resolved once per update using reusable
 buffers and an iterative traversal, including parents without mesh components.
 
@@ -134,10 +239,11 @@ uploads a shared mesh once and reuses its buffers across entities. Each submesh 
 issues a draw call per entity; hardware instancing is not implemented.
 
 Use the panel's **Renderer** selector to switch backends at runtime. The Arch world,
-entities, components, selection, camera, and panel/window placement survive the switch.
-The old backend releases its GPU resources before its window/device closes; the new
-backend uploads the same CPU meshes again. `Program.cs` owns the world outside this
-loop. Closing the window or pressing Escape exits the viewer.
+entities, components, simulation schedule, selection, camera, and panel/window
+placement survive the switch. The old backend releases its GPU resources before
+its window/device closes; the new backend uploads the same CPU meshes again.
+`Program.cs` owns the world outside this loop. Closing the window or pressing
+Escape exits the viewer.
 
 `ReleaseMesh(mesh)` drops only that backend's GPU cache entry; drawing the mesh again
 uploads it again. CPU assets are collected when no references remain. Treat loaded
@@ -151,14 +257,17 @@ and controls but currently have different lighting/color output.
 ## Input and project structure
 
 Both window hosts implement `IInputSystem`. Shared `ModelViewer.Update` owns camera
-controls, focus/UI capture handling, delta clamping, and automatic orbit. The host
+controls, focus/UI capture handling, simulation advancement, camera delta clamping,
+and automatic orbit. Input capture uses the most recent UI frame. The host
 owns native events, clearing, viewport changes, presentation, and ImGui rendering.
 
 - `Components`: Arch scene data: transforms and mesh renderers.
 - `Ecs`: Arch entity convenience extensions, including `entity.World` and `entity.IsAlive`.
 - `Systems`: transform hierarchy resolution and parenting validation.
+- `Simulation`: fixed-tick scheduling and the simulation system interface.
 - `Models`: shared CPU mesh assets, glTF import, and bounds.
 - `Rendering`: renderer interface, world mesh query, matrix helpers, and orbit camera.
+- `Rendering/RenderWorld.cs`: trimmed render-world preparation and publication.
 - `Input`: shared key codes, input interface, and ImGui key conversions.
 - `Viewer`: shared editor state, entity inspector, camera controls, and smoke checks.
 - `Backends/Brutal` and `Backends/MonoGame`: backend rendering, GPU resources,
@@ -183,9 +292,17 @@ Build, or run a three-frame rendering/UI/GPU-sharing check that closes itself:
 
 ```powershell
 dotnet build Chippy.slnx
+dotnet run --project Tests/Chippy.Tests.csproj
+dotnet run --project Tests/Chippy.Tests.csproj -- --native
 dotnet run -- --renderer=brutal --model-demo --smoke-test
 dotnet run -- --renderer=monogame --model-demo --smoke-test
 ```
+
+The console checks use no additional test-framework packages and cover tick cadence/debt, worker/world isolation,
+render-world isolation/source links, preemptive deadlines, held edits, mode changes, manual stepping,
+worker failures, and redraw pacing. `--native` checks both backends drawing models
+and reusing completed ImGui output during a deliberately blocked tick, then joining
+that worker on exit.
 
 Built with [Arch](https://github.com/genaray/Arch),
 [MonoGame](https://monogame.net/), and [BRUTAL](https://github.com/ahwootech/BRUTAL).

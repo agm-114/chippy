@@ -27,12 +27,13 @@ public class MonoGameViewerUi : IDisposable
     private int nextTextureId;
     private bool disposed;
     public bool WantsKeyboard => panel.WantsKeyboard;
+    public bool HasPendingInput => panel.HasPendingInput;
 
-    public MonoGameViewerUi(Game game, ViewerState state, string name)
+    public MonoGameViewerUi(Game game, ModelViewer viewer, string name)
     {
         this.game = game;
         device = game.GraphicsDevice;
-        panel = new ViewerPanel(state, name);
+        panel = new ViewerPanel(viewer, name);
         try
         {
             effect = new BasicEffect(device) { VertexColorEnabled = true, TextureEnabled = true };
@@ -47,13 +48,9 @@ public class MonoGameViewerUi : IDisposable
         }
     }
 
-    public void BeginFrame(float delta)
+    public void PollInput()
     {
         var io = ImGui.GetIO();
-        var viewport = device.Viewport;
-        io.DisplaySize = new float2(game.Window.ClientBounds.Width, game.Window.ClientBounds.Height);
-        io.DisplayFramebufferScale = new float2(viewport.Width / io.DisplaySize.X, viewport.Height / io.DisplaySize.Y);
-        io.DeltaTime = Math.Max(delta, 0.001f);
         io.AddFocusEvent(game.IsActive);
         var mouse = Mouse.GetState();
         io.AddMousePosEvent(game.IsActive ? mouse.X : -float.MaxValue, game.IsActive ? mouse.Y : -float.MaxValue);
@@ -71,15 +68,21 @@ public class MonoGameViewerUi : IDisposable
         io.AddKeyEvent(ImGuiKey.Mod_Shift, Down(KeyCode.LeftShift) || Down(KeyCode.RightShift));
         io.AddKeyEvent(ImGuiKey.Mod_Alt, Down(KeyCode.LeftAlt) || Down(KeyCode.RightAlt));
         io.AddKeyEvent(ImGuiKey.Mod_Super, Down(KeyCode.LeftWindows) || Down(KeyCode.RightWindows));
-        ImGui.NewFrame();
-        panel.Draw();
-
         bool Down(KeyCode key) => game.IsActive && keyboard.IsKeyDown(key.ToMonoGame());
+    }
+
+    public bool BuildFrame()
+    {
+        var io = ImGui.GetIO();
+        var viewport = device.Viewport;
+        io.DisplaySize = new float2(game.Window.ClientBounds.Width, game.Window.ClientBounds.Height);
+        io.DisplayFramebufferScale = new float2(viewport.Width / io.DisplaySize.X, viewport.Height / io.DisplaySize.Y);
+        return panel.BuildFrame();
     }
 
     public unsafe int Render()
     {
-        ImGui.Render();
+        if (!panel.HasDrawData) return 0;
         UpdateTextures();
         var data = ImGui.GetDrawData();
         if (data.TotalVtxCount == 0)

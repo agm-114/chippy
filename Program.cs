@@ -31,9 +31,15 @@ try
         selected = world.Create(model.Normalization.ToTransform(), new MeshRenderer(model));
     var name = Path.GetFileName(modelPath);
     var smokeTest = args.Contains("--smoke-test");
+    var publish = !args.Contains("--no-publish-render-data");
+    var preemptive = args.Contains("--preemptive-ticking");
+    if (preemptive && !publish)
+        throw new ArgumentException("Preemptive ticking requires render data publishing.");
     var state = new ViewerState(world, backend == "monogame" ? RenderBackend.MonoGame : RenderBackend.Brutal)
     {
-        SelectedEntity = selected
+        SelectedEntity = selected,
+        PublishRenderData = publish,
+        PreemptiveTicking = preemptive
     };
     while (true)
     {

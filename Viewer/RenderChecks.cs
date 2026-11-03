@@ -19,12 +19,12 @@ internal static class RenderChecks
         Console.WriteLine($"Render check passed: {visible} visible model pixels.");
     }
 
-    public static void CheckMeshSharing(IRenderSystem renderer, World world)
+    public static void CheckMeshSharing(IRenderSystem renderer, ModelViewer viewer)
     {
         var query = new QueryDescription().WithAll<Transform, MeshRenderer>();
         HashSet<Mesh> meshes = new(ReferenceEqualityComparer.Instance);
         var count = 0;
-        world.Query(in query, (ref Transform _, ref MeshRenderer meshRenderer) =>
+        viewer.RenderWorld.Query(in query, (ref Transform _, ref MeshRenderer meshRenderer) =>
         {
             if (!meshRenderer.Enabled || meshRenderer.SharedMesh is not { } mesh)
                 return;

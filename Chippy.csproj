@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="Tests/**/*.cs" />
     <None Update="Assets/**/*;Backends/Brutal/Shaders/*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

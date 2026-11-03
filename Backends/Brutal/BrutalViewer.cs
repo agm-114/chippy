@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Brutal.GlfwApi;
 using Brutal.Numerics;
 using Brutal.OpenGlApi;
@@ -40,7 +39,8 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
             nativeWindow.MakeContextCurrent();
             if (!Glad.Initialize(Glfw.PInvoke.GetProcAddress))
                 throw new InvalidOperationException("Failed to load OpenGL functions.");
-            Glfw.SwapInterval(1);
+            // Shared pacing must be able to wake for a simulation tick before the next frame.
+            Glfw.SwapInterval(0);
             if (!smokeTest)
                 nativeWindow.Visible = true;
             try
@@ -66,30 +66,22 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
     private bool RunLoop(Func<IRenderSystem> createRenderSystem, ViewerState state, string name, bool smokeTest)
     {
         using var renderer = createRenderSystem();
-        var viewer = new ModelViewer(renderer, this, state);
-        using var ui = new BrutalViewerUi(window, state, name);
-        var timer = Stopwatch.StartNew();
-        var previousTime = timer.Elapsed.TotalSeconds;
+        using var viewer = new ModelViewer(renderer, this, state);
+        using var ui = new BrutalViewerUi(window, viewer, name);
         var frames = 0;
 
         while (!window.ShouldClose)
         {
             Glfw.PollEvents();
-            var now = timer.Elapsed.TotalSeconds;
-            var delta = (float)(now - previousTime);
-            previousTime = now;
-
+            ui.PollInput();
             var size = window.FramebufferSize;
-            if (size.X == 0 || size.Y == 0)
-            {
-                Glfw.WaitEvents();
-                continue;
-            }
-            ui.BeginFrame();
-            if (!viewer.Update(delta, ui.WantsKeyboard))
-            {
-                ui.Render();
+            var canDraw = size.X > 0 && size.Y > 0;
+            if (!viewer.Update(ui.WantsKeyboard, ui.HasPendingInput, canDraw ? ui.BuildFrame : null))
                 return false;
+            if (!canDraw || !viewer.ShouldRender)
+            {
+                Thread.Sleep(viewer.GetUpdateDelay(rendering: canDraw));
+                continue;
             }
 
             var color = state.Background;
@@ -106,7 +98,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                 if (uiVertices == 0 || GetError() != GL_NO_ERROR)
                     throw new InvalidOperationException("ImGui rendering check failed.");
                 Console.WriteLine($"ImGui check passed: {uiVertices} UI vertices; no OpenGL errors.");
-                RenderChecks.CheckMeshSharing(renderer, state.World);
+                RenderChecks.CheckMeshSharing(renderer, viewer);
                 return state.Renderer != RenderBackend.Brutal;
             }
             window.SwapBuffers();

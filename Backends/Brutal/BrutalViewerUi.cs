@@ -12,10 +12,11 @@ public class BrutalViewerUi : IDisposable
     private readonly OpenGlBackend renderer;
     private bool disposed;
     public bool WantsKeyboard => panel.WantsKeyboard;
+    public bool HasPendingInput => panel.HasPendingInput;
 
-    public BrutalViewerUi(GlfwWindow window, ViewerState state, string name)
+    public BrutalViewerUi(GlfwWindow window, ModelViewer viewer, string name)
     {
-        panel = new ViewerPanel(state, name);
+        panel = new ViewerPanel(viewer, name);
         GlfwBackend? initializedPlatform = null;
         try
         {
@@ -31,17 +32,17 @@ public class BrutalViewerUi : IDisposable
         }
     }
 
-    public void BeginFrame()
+    public void PollInput() => platform.NewFrame();
+
+    public bool BuildFrame()
     {
         renderer.NewFrame();
-        platform.NewFrame();
-        ImGui.NewFrame();
-        panel.Draw();
+        return panel.BuildFrame();
     }
 
     public int Render()
     {
-        ImGui.Render();
+        if (!panel.HasDrawData) return 0;
         var data = ImGui.GetDrawData();
         renderer.RenderDrawData(data);
         return data.TotalVtxCount;

@@ -1,12 +1,16 @@
 using System.Numerics;
 using Arch.Core;
 using Chippy.Rendering;
+using Chippy.Simulation;
 
 namespace Chippy.Viewer;
 
 public class ViewerState(World world, RenderBackend renderer = RenderBackend.Brutal)
 {
     public World World { get; } = world;
+    public SimulationScheduler Simulation { get; init; } = new();
+    public bool PublishRenderData = true;
+    public bool PreemptiveTicking;
     public OrbitCamera Camera { get; } = new();
     public WindowPlacement? WindowPlacement { get; private set; }
     public RenderBackend Renderer = renderer;
@@ -17,6 +21,15 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
     public bool Wireframe;
     public bool AutoRotate;
     public Entity? SelectedEntity;
+    public int TargetFrameRate
+    {
+        get;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(value);
+            field = value;
+        }
+    } = 60;
 
     public void SaveWindowPlacement(int x, int y, int width, int height)
     {

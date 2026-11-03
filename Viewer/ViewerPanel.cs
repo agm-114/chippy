@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Numerics;
 using Arch.Core;
 using Arch.Core.Extensions;
 using Brutal.ImGuiApi;
@@ -12,17 +14,22 @@ public class ViewerPanel : IDisposable
     private readonly ImGuiContextPtr context;
     private readonly string name;
     private readonly ViewerState state;
+    private readonly ModelViewer viewer;
+    private readonly Stopwatch timer = Stopwatch.StartNew();
     private readonly QueryDescription transformQuery = new QueryDescription().WithAll<Transform>();
     private readonly List<Entity> entities = [];
     private readonly HashSet<Mesh> meshes = new(ReferenceEqualityComparer.Instance);
     private bool disposed;
 
     public bool WantsKeyboard => ImGui.GetIO().WantCaptureKeyboard;
+    public bool HasPendingInput => context.InputEventsQueue.Count > 0;
+    public bool HasDrawData { get; private set; }
 
-    public unsafe ViewerPanel(ViewerState state, string name)
+    public unsafe ViewerPanel(ModelViewer viewer, string name)
     {
-        this.state = state;
+        state = viewer.State;
         this.name = name;
+        this.viewer = viewer;
         context = ImGui.CreateContext();
         var io = ImGui.GetIO();
         io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
@@ -35,8 +42,27 @@ public class ViewerPanel : IDisposable
         style.WindowPadding = new float2(16, 16);
     }
 
-    public void Draw()
+    // ImGui can trickle a queued press/release across frames. Drain it while the world
+    // is safe, so the next simulation tick cannot delay the release/click action again.
+    public bool BuildFrame()
     {
+        ImGui.GetIO().DeltaTime = Math.Max((float)timer.Elapsed.TotalSeconds, 0.001f);
+        timer.Restart();
+        var changed = false;
+        do
+        {
+            ImGui.NewFrame();
+            changed |= Draw();
+            ImGui.Render();
+            HasDrawData = true;
+            if (!HasPendingInput) return changed;
+            ImGui.GetIO().DeltaTime = 0.001f;
+        } while (true);
+    }
+
+    private bool Draw()
+    {
+        var changed = false;
         ImGui.SetNextWindowPos(new float2(state.PanelPosition.X, state.PanelPosition.Y), ImGuiCond.Once);
         ImGui.SetNextWindowSize(new float2(state.PanelSize.X, state.PanelSize.Y), ImGuiCond.Once);
         ImGui.SetNextWindowCollapsed(state.PanelCollapsed, ImGuiCond.Once);
@@ -51,14 +77,16 @@ public class ViewerPanel : IDisposable
         }
         if (contentsVisible)
         {
-            RefreshEntities();
             ImGui.TextWrapped(name);
-            ImGui.Text($"{entities.Count:N0} entities · {meshes.Count:N0} shared meshes");
             var fps = ImGui.GetIO().Framerate;
-            ImGui.Text($"{fps:F0} FPS · {(fps > 0 ? 1000 / fps : 0):F2} ms/frame");
+            ImGui.Text($"{fps:F0} UI updates/s");
 
             DrawRendererControls();
-            DrawEntityControls();
+            DrawSimulationControls();
+            // A manual tick can create or destroy entities.
+            RefreshEntities();
+            ImGui.Text($"{entities.Count:N0} entities · {meshes.Count:N0} shared meshes");
+            changed = DrawEntityControls();
 
             ImGui.SeparatorText("Camera"u8);
             ImGui.SliderAngle("Yaw"u8, ref state.Camera.Yaw, -180, 180, "%.0f deg"u8, ImGuiSliderFlags.AlwaysClamp);
@@ -73,19 +101,20 @@ public class ViewerPanel : IDisposable
 
             ImGui.SeparatorText("Display"u8);
             ImGui.Checkbox("Wireframe"u8, ref state.Wireframe);
-            var color = state.Background;
-            var background = new float4(color.X, color.Y, color.Z, color.W);
-            if (ImGui.ColorEdit4("Background"u8, ref background, ImGuiColorEditFlags.NoAlpha))
-                state.Background = new(background.X, background.Y, background.Z, background.W);
+            EditColor("Background"u8, ref state.Background);
             ImGui.Separator();
             ImGui.TextWrapped("Arrows: orbit · +/-: zoom · Esc: close"u8);
             ImGui.TextWrapped("Click the scene to use camera shortcuts."u8);
         }
         ImGui.End();
+        return changed;
     }
 
     private void DrawRendererControls()
     {
+        var targetFrameRate = state.TargetFrameRate;
+        if (ImGui.SliderInt("Target FPS"u8, ref targetFrameRate, 15, 144))
+            state.TargetFrameRate = targetFrameRate;
         var preview = state.Renderer == RenderBackend.Brutal ? "BRUTAL"u8 : "MonoGame"u8;
         if (!ImGui.BeginCombo("Renderer"u8, preview))
             return;
@@ -112,12 +141,36 @@ public class ViewerPanel : IDisposable
         });
     }
 
-    private void DrawEntityControls()
+    private void DrawSimulationControls()
+    {
+        var simulation = state.Simulation;
+        ImGui.SeparatorText("Simulation"u8);
+        ImGui.Text($"Tick {simulation.Tick:N0} · {simulation.ElapsedTime:F1} simulated seconds");
+        ImGui.Checkbox("Publish render data"u8, ref state.PublishRenderData);
+        ImGui.BeginDisabled(!state.PublishRenderData);
+        ImGui.Checkbox("Preemptive ticking"u8, ref state.PreemptiveTicking);
+        ImGui.EndDisabled();
+        if (viewer.UsesPublishedData)
+            ImGui.Text($"Displayed tick {viewer.DisplayedTick:N0} · working tick {simulation.Tick:N0}");
+        var paused = simulation.Paused;
+        if (ImGui.Checkbox("Paused"u8, ref paused))
+            simulation.Paused = paused;
+        ImGui.SameLine();
+        ImGui.BeginDisabled(!simulation.Paused);
+        if (ImGui.Button("Step"u8))
+            viewer.StepSimulation();
+        ImGui.EndDisabled();
+        var speed = (float)simulation.Speed;
+        if (ImGui.SliderFloat("Simulation speed"u8, ref speed, 0, 10, "%.1fx"u8, ImGuiSliderFlags.AlwaysClamp))
+            simulation.Speed = speed;
+    }
+
+    private bool DrawEntityControls()
     {
         if (entities.Count == 0)
         {
             state.SelectedEntity = null;
-            return;
+            return false;
         }
         if (state.SelectedEntity is not { } selected || !entities.Contains(selected))
             state.SelectedEntity = entities[0];
@@ -129,43 +182,56 @@ public class ViewerPanel : IDisposable
 
         var entity = state.SelectedEntity.Value;
         ref var transform = ref entity.Get<Transform>();
-        DrawParentControls(entity, transform.Parent);
-        var position = transform.LocalPosition;
-        var positionEdit = new float3(position.X, position.Y, position.Z);
-        if (ImGui.DragFloat3("Local position"u8, ref positionEdit, 0.01f))
-            transform.LocalPosition = new(positionEdit.X, positionEdit.Y, positionEdit.Z);
+        var changed = DrawParentControls(entity, transform.Parent);
+        changed |= DragVector3("Local position"u8, ref transform.LocalPosition, 0.01f);
         var angles = transform.LocalEulerAngles;
-        var rotationEdit = new float3(angles.X, angles.Y, angles.Z);
-        if (ImGui.DragFloat3("Local rotation (deg)"u8, ref rotationEdit, 0.5f))
-            transform.LocalEulerAngles = new(rotationEdit.X, rotationEdit.Y, rotationEdit.Z);
-        var scale = transform.LocalScale;
-        var scaleEdit = new float3(scale.X, scale.Y, scale.Z);
-        if (ImGui.DragFloat3("Local scale"u8, ref scaleEdit, 0.01f, 0.01f, 100f, "%.2f"u8, ImGuiSliderFlags.AlwaysClamp))
-            transform.LocalScale = new(scaleEdit.X, scaleEdit.Y, scaleEdit.Z);
+        if (DragVector3("Local rotation (deg)"u8, ref angles, 0.5f))
+        {
+            transform.LocalEulerAngles = angles;
+            changed = true;
+        }
+        changed |= DragVector3("Local scale"u8, ref transform.LocalScale, 0.01f, 0.01f, 100f);
 
         ref var renderer = ref entity.TryGetRef<MeshRenderer>(out var hasRenderer);
         if (!hasRenderer)
-            return;
+            return changed;
         if (renderer.SharedMesh is { } mesh)
             ImGui.Text($"{mesh.SubMeshes.Count:N0} submeshes · {mesh.TriangleCount:N0} triangles");
-        ImGui.Checkbox("Enabled"u8, ref renderer.Enabled);
-        var tint = renderer.Tint;
-        var tintEdit = new float4(tint.X, tint.Y, tint.Z, tint.W);
-        if (ImGui.ColorEdit4("Tint"u8, ref tintEdit, ImGuiColorEditFlags.NoAlpha))
-            renderer.Tint = new(tintEdit.X, tintEdit.Y, tintEdit.Z, tintEdit.W);
+        changed |= ImGui.Checkbox("Enabled"u8, ref renderer.Enabled);
+        changed |= EditColor("Tint"u8, ref renderer.Tint);
+        return changed;
     }
 
-    private void DrawParentControls(Entity entity, Entity? parent)
+    private bool DrawParentControls(Entity entity, Entity? parent)
     {
         if (!ImGui.BeginCombo("Parent"u8, parent is { } current ? $"Entity {current.Id}" : "None"))
-            return;
+            return false;
+        var changed = false;
         if (ImGui.Selectable("None"u8, parent is null))
-            entity.TrySetParent(null);
+            changed |= entity.TrySetParent(null);
         foreach (var candidate in entities)
             if (entity.CanSetParent(candidate)
                 && ImGui.Selectable($"Entity {candidate.Id}", candidate == parent))
-                entity.TrySetParent(candidate);
+                changed |= entity.TrySetParent(candidate);
         ImGui.EndCombo();
+        return changed;
+    }
+
+    private static bool DragVector3(ReadOnlySpan<byte> label, ref Vector3 value, float speed, float min = 0, float max = 0)
+    {
+        var edit = new float3(value.X, value.Y, value.Z);
+        if (!ImGui.DragFloat3(label, ref edit, speed, min, max, min < max ? "%.2f"u8 : "%.3f"u8,
+            min < max ? ImGuiSliderFlags.AlwaysClamp : ImGuiSliderFlags.None)) return false;
+        value = new(edit.X, edit.Y, edit.Z);
+        return true;
+    }
+
+    private static bool EditColor(ReadOnlySpan<byte> label, ref Vector4 value)
+    {
+        var edit = new float4(value.X, value.Y, value.Z, value.W);
+        if (!ImGui.ColorEdit4(label, ref edit, ImGuiColorEditFlags.NoAlpha)) return false;
+        value = new(edit.X, edit.Y, edit.Z, edit.W);
+        return true;
     }
 
     public void Dispose()
