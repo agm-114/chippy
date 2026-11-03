@@ -1,4 +1,5 @@
 using Arch.Core;
+using Arch.Core.Extensions;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using Chippy.Components;
@@ -106,7 +107,7 @@ public class ViewerPanel : IDisposable
         state.World.Query(in transformQuery, (Entity entity, ref Transform _) =>
         {
             entities.Add(entity);
-            if (state.World.TryGet<MeshRenderer>(entity, out var renderer) && renderer.SharedMesh is { } mesh)
+            if (entity.TryGet<MeshRenderer>(out var renderer) && renderer.SharedMesh is { } mesh)
                 meshes.Add(mesh);
         });
     }
@@ -127,7 +128,7 @@ public class ViewerPanel : IDisposable
                 state.SelectedEntity = candidate;
 
         var entity = state.SelectedEntity.Value;
-        ref var transform = ref state.World.Get<Transform>(entity);
+        ref var transform = ref entity.Get<Transform>();
         DrawParentControls(entity, transform.Parent);
         var position = transform.LocalPosition;
         var positionEdit = new float3(position.X, position.Y, position.Z);
@@ -142,9 +143,9 @@ public class ViewerPanel : IDisposable
         if (ImGui.DragFloat3("Local scale"u8, ref scaleEdit, 0.01f, 0.01f, 100f, "%.2f"u8, ImGuiSliderFlags.AlwaysClamp))
             transform.LocalScale = new(scaleEdit.X, scaleEdit.Y, scaleEdit.Z);
 
-        if (!state.World.Has<MeshRenderer>(entity))
+        ref var renderer = ref entity.TryGetRef<MeshRenderer>(out var hasRenderer);
+        if (!hasRenderer)
             return;
-        ref var renderer = ref state.World.Get<MeshRenderer>(entity);
         if (renderer.SharedMesh is { } mesh)
             ImGui.Text($"{mesh.SubMeshes.Count:N0} submeshes · {mesh.TriangleCount:N0} triangles");
         ImGui.Checkbox("Enabled"u8, ref renderer.Enabled);
@@ -159,11 +160,11 @@ public class ViewerPanel : IDisposable
         if (!ImGui.BeginCombo("Parent"u8, parent is { } current ? $"Entity {current.Id}" : "None"))
             return;
         if (ImGui.Selectable("None"u8, parent is null))
-            state.World.TrySetParent(entity, null);
+            entity.TrySetParent(null);
         foreach (var candidate in entities)
-            if (state.World.CanSetParent(entity, candidate)
+            if (entity.CanSetParent(candidate)
                 && ImGui.Selectable($"Entity {candidate.Id}", candidate == parent))
-                state.World.TrySetParent(entity, candidate);
+                entity.TrySetParent(candidate);
         ImGui.EndCombo();
     }
 

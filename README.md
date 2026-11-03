@@ -35,6 +35,7 @@ interfaces. CPU mesh assets remain shared C# objects.
 ```csharp
 using System.Numerics;
 using Arch.Core;
+using Arch.Core.Extensions;
 using Chippy.Components;
 using Chippy.Ecs;
 using Chippy.Models;
@@ -55,7 +56,7 @@ var transforms = new TransformSystem(world);
 var meshes = new MeshRenderSystem(world, renderer); // An initialized IRenderSystem.
 
 // Mutate components directly; do not retain refs across structural world changes.
-ref var transform = ref world.Get<Transform>(entity);
+ref var transform = ref entity.Get<Transform>();
 transform.LocalPosition += Vector3.UnitX;
 transform.LocalEulerAngles = new(0, 45, 0);
 
@@ -70,10 +71,22 @@ thread; finish simulation jobs before editing or rendering it. GPU creation,
 drawing, release, and disposal happen on the graphics thread with its context or
 device available.
 
-`entity.World` resolves a live entity's owning world through Arch's registry and
-throws if the lookup is invalid. `entity.TryGetWorld(out var world)` returns false
-instead. Keep entities within their world's lifetime; Arch can recycle world IDs
-after disposal. Systems can continue receiving an explicit world dependency.
+`entity.World` indexes Arch's world registry directly. `entity.IsAlive` delegates to
+`entity.World.IsAlive(entity)`. Both assume the owning world still exists. A destroyed
+entity can still resolve its existing world. Keep entities within their world's
+lifetime; Arch can recycle world IDs after disposal. Systems can continue receiving
+an explicit world dependency.
+
+Import `Arch.Core.Extensions` for Arch's existing entity methods, including
+`entity.Get<T>()`, `entity.Has<T>()`, `entity.TryGet<T>(out var component)`,
+`entity.Set(component)`, `entity.Add(component)`, and `entity.Remove<T>()`.
+`Get<T>()` returns a reference; `TryGet<T>()` copies the component. Use
+`ref var component = ref entity.TryGetRef<T>(out var exists)` when an optional
+component needs editing, and check `exists` before accessing the reference.
+These methods assume a live entity; structural changes can invalidate component refs.
+Arch also defines `IsAlive()`; to use our `IsAlive` property when importing both
+namespaces, put `using Chippy.Ecs;` inside your namespace and leave
+`using Arch.Core.Extensions;` outside it. The nearer import takes precedence.
 
 ## Transform hierarchy
 
@@ -89,16 +102,16 @@ on its next update. Each transform is resolved once per update using reusable
 buffers and an iterative traversal, including parents without mesh components.
 
 ```csharp
-world.SetParent(entity, parent);
-world.SetParent(entity, null); // Detach.
-if (world.TrySetParent(entity, parent))
+entity.SetParent(parent);
+entity.SetParent(null); // Detach.
+if (entity.TrySetParent(parent))
     Console.WriteLine("Parent changed.");
 ```
 
 Parenting keeps local values, so the world position can change. Parents must be
 live entities in the same world with a `Transform`. `CanSetParent` validates a
 request without changing it; `TrySetParent` returns false on invalid requests and
-leaves the child unchanged. `SetParent` throws for invalid requests. These are World
+leaves the child unchanged. `SetParent` throws for invalid requests. These are Entity
 extension methods in `Chippy.Components`, alongside `matrix.ToTransform()`.
 Direct writes to `Parent` are also validated by the next update.
 When a parent is deleted, its children detach on the next update and retain local
@@ -142,7 +155,7 @@ controls, focus/UI capture handling, delta clamping, and automatic orbit. The ho
 owns native events, clearing, viewport changes, presentation, and ImGui rendering.
 
 - `Components`: Arch scene data: transforms and mesh renderers.
-- `Ecs`: Arch entity convenience extensions, including `entity.World`.
+- `Ecs`: Arch entity convenience extensions, including `entity.World` and `entity.IsAlive`.
 - `Systems`: transform hierarchy resolution and parenting validation.
 - `Models`: shared CPU mesh assets, glTF import, and bounds.
 - `Rendering`: renderer interface, world mesh query, matrix helpers, and orbit camera.
