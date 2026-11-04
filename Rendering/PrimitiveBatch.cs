@@ -110,10 +110,12 @@ public class PrimitiveBatch(IRenderSystem renderer)
         }
     }
 
-    public void Flush(Vector2 viewportSize)
+    public void Flush(Vector2 viewportSize, Vector3 origin = default)
     {
         if (viewportSize.X <= 0 || viewportSize.Y <= 0 || !float.IsFinite(viewportSize.LengthSquared()))
             throw new ArgumentOutOfRangeException(nameof(viewportSize));
+        foreach (ref var vertex in CollectionsMarshal.AsSpan(lines)) vertex.Position -= origin;
+        foreach (ref var vertex in CollectionsMarshal.AsSpan(triangles)) vertex.Position -= origin;
         if (lines.Count > 0) renderer.DrawPrimitives(CollectionsMarshal.AsSpan(lines), PrimitiveTopology.Lines);
         if (triangles.Count > 0) renderer.DrawPrimitives(CollectionsMarshal.AsSpan(triangles), PrimitiveTopology.Triangles);
         var screen = CollectionsMarshal.AsSpan(overlay);

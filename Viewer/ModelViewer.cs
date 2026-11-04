@@ -19,7 +19,9 @@ public class ModelViewer : IDisposable
     private readonly int ownerThread = Environment.CurrentManagedThreadId;
     private RenderWorld? published;
     private Task? simulationWork;
-    private double previousTime, previousSimulationTime, nextRenderTime;
+    private double previousTime, previousSimulationTime, nextRenderTime, previousRenderTime;
+    private Entity? followedEntity;
+    private Vector3 previousFollowPosition;
     private bool earlyTick, redraw, uiInitialized, worldChanged, disposed;
     private bool middleHeld, dragging, focusHeld;
     private readonly QueryDescription focusQuery = new QueryDescription().WithAll<Transform>();
@@ -157,14 +159,17 @@ public class ModelViewer : IDisposable
     public void Draw(Vector2 viewportSize)
     {
         EnsureOwner();
+        if (!UsesPublishedData) transforms.Update();
+        FollowSelection((float)Math.Clamp(Now - previousRenderTime, 0, 0.1));
+        previousRenderTime = Now;
         var interval = 1.0 / State.TargetFrameRate;
         nextRenderTime = (Math.Floor(Now / interval) + 1) * interval;
         redraw = false;
-        var view = Matrix4x4.CreateLookAt(State.Camera.Eye, State.Camera.Target, Vector3.UnitY);
-        var projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 4, viewportSize.X / viewportSize.Y, 0.01f, 2000f);
+        var view = Matrix4x4.CreateLookAt(State.Camera.Offset, Vector3.Zero, Vector3.UnitY);
+        var projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 4, viewportSize.X / viewportSize.Y,
+            State.Camera.NearClip, State.Camera.FarClip);
         renderSystem.BeginFrame(view, projection, State.Wireframe);
-        if (!UsesPublishedData) transforms.Update();
-        scene.Draw(RenderWorld, viewportSize, State.DrawOverlay);
+        scene.Draw(RenderWorld, viewportSize, State.DrawOverlay, State.Camera.Target);
         DisplayedTick = PublishedTick ?? State.Simulation.Tick;
     }
 
@@ -209,14 +214,32 @@ public class ModelViewer : IDisposable
         }
         if (input.IsFocused && !mouseCaptured) camera.Move(0, 0, -input.ScrollDelta * 0.12f);
         if (State.AutoRotate) camera.Move(0.35f * frameDelta, 0, 0);
-        // Follow only completed render data, including while a simulation worker is running.
+        return true;
+    }
+
+    private void FollowSelection(float deltaTime)
+    {
+        // Track the completed frame's movement exactly; smooth only the offset from its center.
+        // Reading published data here keeps focus aligned with the mesh, even during slow ticks.
         if (State.FollowSelected && State.SelectedEntity is { } selected)
             RenderWorld.Query(in focusQuery, (Entity entity, ref Transform transform) =>
             {
                 var original = entity.TryGet<SourceEntity>(out var source) ? source.Entity : entity;
-                if (original == selected) camera.Follow(transform.LocalToWorldMatrix.Translation, frameDelta);
+                if (original != selected) return;
+                var position = transform.LocalToWorldMatrix.Translation;
+                if (followedEntity != selected && entity.TryGet<MeshRenderer>(out var renderer)
+                    && renderer.SharedMesh is { } mesh
+                    && Matrix4x4.Decompose(transform.LocalToWorldMatrix, out var scale, out _, out _))
+                {
+                    var distance = (mesh.Bounds.Size * Vector3.Abs(scale)).Length() * 1.3f;
+                    State.Camera.Distance = Math.Clamp(Math.Max(State.Camera.Distance, distance), State.Camera.MinDistance, State.Camera.MaxDistance);
+                }
+                if (followedEntity == selected) State.Camera.Target += position - previousFollowPosition;
+                State.Camera.Follow(position, deltaTime);
+                previousFollowPosition = position;
+                followedEntity = selected;
             });
-        return true;
+        else followedEntity = null;
     }
 
     private void EnsureOwner()

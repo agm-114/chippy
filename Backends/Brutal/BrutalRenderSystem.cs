@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using Brutal.Numerics;
 using Brutal.OpenGlApi;
 using Chippy.Components;
@@ -18,6 +19,8 @@ public class BrutalRenderSystem : IRenderSystem
     private readonly int colorLocation;
     private readonly int unlitLocation;
     private readonly BrutalPrimitives primitives;
+    private readonly Lighting lighting = new();
+    private readonly int[] lightDirections = new int[3], lightColors = new int[3];
     private Matrix4x4 viewProjection;
     private bool disposed;
 
@@ -40,6 +43,11 @@ public class BrutalRenderSystem : IRenderSystem
             viewProjectionLocation = program.GetUniformLocation("uViewProjection\0"u8);
             colorLocation = program.GetUniformLocation("uColor\0"u8);
             unlitLocation = program.GetUniformLocation("uUnlit\0"u8);
+            for (var i = 0; i < lightDirections.Length; i++)
+            {
+                lightDirections[i] = program.GetUniformLocation(Encoding.UTF8.GetBytes($"uLightDirections[{i}]\0"));
+                lightColors[i] = program.GetUniformLocation(Encoding.UTF8.GetBytes($"uLightColors[{i}]\0"));
+            }
             primitives = new();
         }
         catch
@@ -90,6 +98,13 @@ public class BrutalRenderSystem : IRenderSystem
         }
 
         SetMatrix(modelLocation, matrix);
+        var lights = lighting.Sample(Vector3.Transform(mesh.Bounds.Center, matrix));
+        for (var i = 0; i < lights.Length; i++)
+        {
+            var (direction, color) = lights[i];
+            Uniform(lightDirections[i], new float3(direction.X, direction.Y, direction.Z));
+            Uniform(lightColors[i], new float3(color.X, color.Y, color.Z));
+        }
         Uniform(unlitLocation, meshRenderer.Unlit ? 1 : 0);
         SetMatrix(normalLocation, normalMatrix);
         SetFrontFace(matrix.GetDeterminant() < 0);
@@ -106,6 +121,8 @@ public class BrutalRenderSystem : IRenderSystem
         ObjectDisposedException.ThrowIf(disposed, this);
         primitives.Draw(vertices, topology, screenSpace ? Matrix4x4.Identity : viewProjection, screenSpace);
     }
+
+    public void SetLights(ReadOnlySpan<(Transform Transform, Light Light)> lights) => lighting.SetLights(lights);
 
     // Release cached GPU buffers; the shared CPU mesh remains valid and can be drawn again.
     public bool ReleaseMesh(Mesh mesh)

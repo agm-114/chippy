@@ -13,6 +13,7 @@ public class MonoGameRenderSystem : IRenderSystem
     private readonly Dictionary<Mesh, MonoGameMesh[]> uploaded = new(ReferenceEqualityComparer.Instance);
     private readonly BasicEffect effect;
     private readonly MonoGamePrimitives primitives;
+    private readonly Lighting lighting = new();
     private Matrix4x4 viewProjection;
     private readonly RasterizerState solid = new() { CullMode = CullMode.None };
     private readonly RasterizerState wireframe = new() { CullMode = CullMode.None, FillMode = FillMode.WireFrame };
@@ -28,11 +29,8 @@ public class MonoGameRenderSystem : IRenderSystem
         {
             LightingEnabled = true,
             PreferPerPixelLighting = true,
-            AmbientLightColor = new Xna.Vector3(0.28f)
+            AmbientLightColor = new Xna.Vector3(0.04f)
         };
-        effect.DirectionalLight0.Enabled = true;
-        effect.DirectionalLight0.Direction = Xna.Vector3.Normalize(new(0.5f, -0.8f, -0.6f));
-        effect.DirectionalLight0.DiffuseColor = new Xna.Vector3(0.72f);
     }
 
     public void BeginFrame(in Matrix4x4 view, in Matrix4x4 projection, bool wireframe = false)
@@ -71,6 +69,15 @@ public class MonoGameRenderSystem : IRenderSystem
         }
         effect.World = matrix.ToXna();
         effect.LightingEnabled = !meshRenderer.Unlit;
+        var lights = lighting.Sample(Vector3.Transform(mesh.Bounds.Center, matrix));
+        for (var i = 0; i < lights.Length; i++)
+        {
+            var light = i == 0 ? effect.DirectionalLight0 : i == 1 ? effect.DirectionalLight1 : effect.DirectionalLight2;
+            light.Enabled = lights[i].Color != Vector3.Zero;
+            light.Direction = lights[i].Direction.ToXna();
+            light.DiffuseColor = lights[i].Color.ToXna();
+            light.SpecularColor = Xna.Vector3.Zero;
+        }
         foreach (var gpuMesh in meshes)
         {
             var color = gpuMesh.Color * meshRenderer.Tint;
@@ -99,6 +106,8 @@ public class MonoGameRenderSystem : IRenderSystem
         ObjectDisposedException.ThrowIf(disposed, this);
         primitives.Draw(vertices, topology, screenSpace ? Matrix4x4.Identity : viewProjection, screenSpace);
     }
+
+    public void SetLights(ReadOnlySpan<(Transform Transform, Light Light)> lights) => lighting.SetLights(lights);
 
     public void Dispose()
     {

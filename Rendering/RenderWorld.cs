@@ -25,12 +25,14 @@ public class RenderWorld(World source) : IDisposable
         {
             var hasMesh = entity.TryGet<MeshRenderer>(out var renderer) && renderer.IsRenderable;
             var hasLine = entity.TryGet<LineRenderer>(out var line) && line.IsRenderable;
-            if (!hasMesh && !hasLine) return;
+            var hasLight = entity.TryGet<Light>(out var light) && light.IsActive;
+            if (!hasMesh && !hasLine && !hasLight) return;
             var copy = transform;
             copy.Parent = null; // LocalToWorldMatrix is resolved; rendering never follows simulation parents.
             var target = prepared.Create(copy, new SourceEntity(entity));
             if (hasMesh) prepared.Add(target, renderer);
             if (hasLine) prepared.Add(target, line);
+            if (hasLight) prepared.Add(target, light);
         });
         preparedTick = tick;
     }

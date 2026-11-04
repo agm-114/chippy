@@ -13,9 +13,13 @@ dotnet run -- --preemptive-ticking
 dotnet run -- --no-publish-render-data
 ```
 
-The default scene is an animated solar system with orbit paths and a 2D map.
-Sizes, distances and periods are schematic; this is circular motion, not an orbital
-physics solver. `--model-demo` loads two copies of `Assets/Bakery.gltf` under a shared parent.
+The default scene is a solar system at a common scale of 1 world unit = 1,000 km.
+Radii and orbital distances use rounded [NASA fact-sheet values](https://nssdc.gsfc.nasa.gov/planetary/factsheet/).
+The camera starts following Earth, whose triangles are randomly green/blue using a
+fixed seed. The Sun is an unlit mesh with a point light. Orbits remain circular
+and coplanar, with one simulated second representing one hour; this is not an orbital
+physics solver. The 2D map uses fixed-size markers for visibility.
+`--model-demo` loads two copies of `Assets/Bakery.gltf` under a shared parent.
 
 Middle-drag or the arrow keys orbit; wheel or `+`/`-` zoom; Shift + middle-drag pans.
 WASD moves the pivot along the camera's ground plane, Space/Ctrl raises/lowers it,
@@ -85,7 +89,7 @@ window thread briefly. Camera controls continue independently. There is no comma
 
 `RenderWorld` owns two Arch worlds: the published world being drawn and a world for
 preparing the next publication. Preparation rebuilds a trimmed world containing only
-renderable `Transform`, `MeshRenderer`/`LineRenderer`, and `SourceEntity` components.
+renderable `Transform`, `MeshRenderer`/`LineRenderer`/`Light`, and `SourceEntity` components.
 Mesh assets and immutable line positions stay shared. Transform world matrices are resolved before copying; copied parents are
 cleared, and rendering uses those resolved matrices without another transform update.
 `SourceEntity.Entity` refers to the original simulation entity, including its version;
@@ -138,6 +142,7 @@ interfaces. CPU mesh assets remain shared C# objects.
 | `Transform` | Parent entity, local position, quaternion rotation, scale, and the resolved world matrix. |
 | `MeshRenderer` | A shared CPU mesh reference, tint, `Enabled` and `Unlit` state. |
 | `LineRenderer` | Immutable local points, color, loop and enabled state. |
+| `Light` | Point/directional light color, intensity, optional range and enabled state. |
 | `Name` | A readable entity name for the inspector. |
 | `SourceEntity` | On published copies, a reference to the original simulation entity. |
 | `TransformSystem` | Resolves parent hierarchies into world matrices. |
@@ -232,14 +237,14 @@ children first. Parenting affects transforms; renderer enabled state is per enti
 
 ## Rendering and backend switching
 
-`SceneRenderSystem` queries `Transform` with `MeshRenderer` or `LineRenderer`. It draws
+`SceneRenderSystem` queries `Transform` with `MeshRenderer`, `LineRenderer` or `Light`. It draws
 entities with an enabled renderer and a non-null mesh using their world matrix and
 tint. Adding/removing components or entities changes the next draw automatically.
 The system filters disabled renderers and missing meshes, then passes both components
 directly to `IRenderSystem.DrawMesh(in Transform, in MeshRenderer)`. Backend methods
 receive the full components, including the shared mesh, world matrix, and tint.
 
-`IRenderSystem` supplies `BeginFrame`, `DrawMesh`, `DrawPrimitives`, and `ReleaseMesh`. The concrete
+`IRenderSystem` supplies `BeginFrame`, `SetLights`, `DrawMesh`, `DrawPrimitives`, and `ReleaseMesh`. The concrete
 backends own shaders/effects and GPU buffers; neither stores the scene. Each backend
 uploads a shared mesh once and reuses its buffers across entities. Each submesh still
 issues a draw call per entity; hardware instancing is not implemented.
@@ -259,6 +264,16 @@ explicit viewer choice. Drawable transforms must be finite and invertible.
 Matrices use the System.Numerics row-vector convention and a `[0, 1]` projection
 depth range. BRUTAL converts depth for OpenGL internally. The backends share geometry
 and controls but currently have different lighting/color output.
+
+`Light` supports point and directional sources, edited through the inspector. Directional
+lights shine along local -Z. Point intensity falls with squared distance; a positive
+`Range` adds a smooth cutoff, while zero is unlimited. Both backends select the three
+strongest contributions per mesh, approximating each point source's direction and
+falloff at the mesh center. This keeps MonoGame's built-in `BasicEffect` and avoids
+another shader build pipeline; it is suitable for distant sunlight, with approximate
+lighting near large meshes. Shadows and physically based materials are not implemented.
+Rendering subtracts the camera target from submitted positions to keep GPU transforms
+near the origin; simulation coordinates remain unchanged and still use floats.
 
 ## Primitives and procedural audio
 
@@ -301,13 +316,13 @@ controls, focus/UI capture handling, simulation advancement, camera delta clampi
 and automatic orbit. Input capture uses the most recent UI frame. The host
 owns native events, clearing, viewport changes, presentation, and ImGui rendering.
 
-- `Components`: Arch scene data: transforms and mesh renderers.
+- `Components`: Arch scene data: transforms, meshes, lines and lights.
 - `Ecs`: Arch entity convenience extensions, including `entity.World` and `entity.IsAlive`.
 - `Systems`: transform hierarchy resolution and parenting validation.
 - `Simulation`: fixed-tick scheduling and the simulation system interface.
 - `Models`: shared CPU mesh assets, glTF import, and bounds.
 - `Audio`: procedural PCM clips and playback, independent of the renderer.
-- `Demos`: the schematic solar-system scene and orbit animation.
+- `Demos`: the real-scale solar-system scene and circular orbit animation.
 - `Rendering`: renderer interface, world mesh query, matrix helpers, and orbit camera.
 - `Rendering/RenderWorld.cs`: trimmed render-world preparation and publication.
 - `Input`: shared key codes, input interface, and ImGui key conversions.

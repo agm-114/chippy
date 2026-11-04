@@ -95,12 +95,14 @@ public class ViewerPanel : IDisposable
             ImGui.Checkbox("Follow selected (F)"u8, ref state.FollowSelected);
             ImGui.SliderAngle("Yaw"u8, ref state.Camera.Yaw, -180, 180, "%.0f deg"u8, ImGuiSliderFlags.AlwaysClamp);
             ImGui.SliderAngle("Pitch"u8, ref state.Camera.Pitch, -80, 80, "%.0f deg"u8, ImGuiSliderFlags.AlwaysClamp);
-            ImGui.SliderFloat("Distance"u8, ref state.Camera.Distance, 0.5f, 200f, "%.2f"u8, ImGuiSliderFlags.AlwaysClamp);
+            ImGui.SliderFloat("Distance"u8, ref state.Camera.Distance, state.Camera.MinDistance, state.Camera.MaxDistance,
+                "%.2f"u8, ImGuiSliderFlags.AlwaysClamp | ImGuiSliderFlags.Logarithmic);
             if (ImGui.Button("Reset camera"u8))
             {
+                var target = state.Camera.Target;
                 state.Camera.Reset();
+                if (state.FollowSelected) state.Camera.Target = target;
                 state.AutoRotate = false;
-                state.FollowSelected = false;
             }
             ImGui.Checkbox("Auto rotate"u8, ref state.AutoRotate);
 
@@ -201,7 +203,7 @@ public class ViewerPanel : IDisposable
             transform.LocalEulerAngles = angles;
             changed = true;
         }
-        changed |= DragVector3("Local scale"u8, ref transform.LocalScale, 0.01f, 0.01f, 100f);
+        changed |= DragVector3("Local scale"u8, ref transform.LocalScale, 0.01f, 0.01f, Math.Max(100, state.Camera.MaxDistance));
 
         ref var renderer = ref entity.TryGetRef<MeshRenderer>(out var hasRenderer);
         if (hasRenderer)
@@ -215,10 +217,21 @@ public class ViewerPanel : IDisposable
         ref var line = ref entity.TryGetRef<LineRenderer>(out var hasLine);
         if (hasLine)
         {
-            ImGui.Text($"{line.Positions.Length:N0} line points");
+            ImGui.Text($"{(line.Positions.IsDefault ? 0 : line.Positions.Length):N0} line points");
             changed |= ImGui.Checkbox("Line enabled"u8, ref line.Enabled);
             changed |= ImGui.Checkbox("Loop"u8, ref line.Loop);
             changed |= EditColor("Line color"u8, ref line.Color);
+        }
+        ref var light = ref entity.TryGetRef<Light>(out var hasLight);
+        if (hasLight)
+        {
+            ImGui.SeparatorText("Light"u8);
+            changed |= ImGui.Checkbox("Light enabled"u8, ref light.Enabled);
+            var color = new Vector4(light.Color, 1);
+            if (EditColor("Light color"u8, ref color)) { light.Color = new(color.X, color.Y, color.Z); changed = true; }
+            changed |= ImGui.DragFloat("Intensity"u8, ref light.Intensity, Math.Max(0.01f, light.Intensity * 0.01f), 0, float.MaxValue, "%.3g"u8);
+            if (light.Type == LightType.Point)
+                changed |= ImGui.DragFloat("Range (0 = unlimited)"u8, ref light.Range, 1, 0, float.MaxValue, "%.3g"u8);
         }
         return changed;
     }

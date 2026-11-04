@@ -41,12 +41,16 @@ try
         else
             selected = world.Create(new Name(Path.GetFileName(modelPath)), model.Normalization.ToTransform(), new MeshRenderer(model));
         state = new(world, renderer) { SelectedEntity = selected };
+        world.Create(new Name("Key light"), new Transform
+        {
+            LocalRotation = Quaternion.CreateFromYawPitchRoll(0.7f, -0.8f, 0)
+        }, new Light { Type = LightType.Directional, Intensity = 0.85f });
         name = Path.GetFileName(modelPath);
     }
     else
     {
         state = SolarSystemDemo.Create(world, renderer);
-        name = "Solar system · schematic sizes, distances and periods";
+        name = "Solar system · 1 unit = 1,000 km · 1 second = 1 hour";
     }
     using var audio = new AudioSystem();
     state.Audio = audio;
