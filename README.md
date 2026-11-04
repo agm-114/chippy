@@ -141,9 +141,10 @@ interfaces. CPU mesh assets remain shared C# objects.
 
 | Type | Purpose |
 | --- | --- |
-| `Transform` | Parent entity, local position, quaternion rotation, scale, and the resolved world matrix. |
+| `Transform` | Parent entity, local position, quaternion rotation, scale, and the resolved world matrix. Can ignore parent scale. |
+| `OrbitMotion` | Circular orbit radius, phase, and angular speed. `OrbitSystem` updates the entity's local position. |
 | `MeshRenderer` | A shared CPU mesh reference, tint, `Enabled` and `Unlit` state. |
-| `LineRenderer` | Immutable local points, color, loop and enabled state. |
+| `LineRenderer` | Immutable points, color, loop and enabled state. Set `UseWorldSpace` to interpret points as world coordinates. |
 | `Light` | Point/directional light color, intensity, optional range and enabled state. |
 | `Name` | A readable entity name for the inspector. |
 | `SourceEntity` | On published copies, a reference to the original simulation entity. |
@@ -214,7 +215,9 @@ Y=yaw, Z=roll. `LocalRotation` is the authoritative quaternion. Initialize ident
 transforms with `new Transform()`; `default(Transform)` has zero scale/rotation.
 
 `LocalMatrix` is scale × rotation × translation. With System.Numerics row vectors,
-`LocalToWorldMatrix` is local × parent world. `TransformSystem.Update()` refreshes
+`LocalToWorldMatrix` is local × parent world. Enable `IgnoreParentScale` on a child
+to follow its parent's world position and rotation at the child's own scale.
+`TransformSystem.Update()` refreshes
 that derived matrix before preparing render data (or drawing in live mode); changes become visible
 on its next update. Each transform is resolved once per update using reusable
 buffers and an iterative traversal, including parents without mesh components.

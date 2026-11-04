@@ -71,6 +71,8 @@ internal sealed class EntityInspector(ViewerState state, EntityHierarchy hierarc
     private bool DrawTransform(Entity entity, ref Transform transform)
     {
         var changed = DrawParent(entity, transform.Parent);
+        if (transform.Parent is not null)
+            changed |= ImGui.Checkbox("Ignore parent scale"u8, ref transform.IgnoreParentScale);
         changed |= DragVector3("Position"u8, ref transform.LocalPosition, 0.01f);
         var angles = transform.LocalEulerAngles;
         if (DragVector3("Rotation (deg)"u8, ref angles, 0.5f))
@@ -112,6 +114,7 @@ internal sealed class EntityInspector(ViewerState state, EntityHierarchy hierarc
         ImGui.Text($"{(line.Positions.IsDefault ? 0 : line.Positions.Length):N0} line points");
         var changed = ImGui.Checkbox("Enabled"u8, ref line.Enabled);
         changed |= ImGui.Checkbox("Loop"u8, ref line.Loop);
+        changed |= ImGui.Checkbox("Use world space"u8, ref line.UseWorldSpace);
         changed |= EditColor("Color"u8, ref line.Color);
         return changed;
     }

@@ -6,6 +6,7 @@ using Chippy.Components;
 using Chippy.Models;
 using Chippy.Rendering;
 using Chippy.Simulation;
+using Chippy.Systems;
 using Chippy.Viewer;
 
 namespace Chippy.Demos;
@@ -35,42 +36,43 @@ public static class SolarSystemDemo
             ("Neptune", 4_515_000, 24.764f, 59800, new(0.3f, 0.4f, 1, 1))
         ];
         var earth = default(Entity);
-        var earthPivot = default(Entity);
         for (var i = 0; i < planets.Length; i++)
         {
             var planet = planets[i];
-            var phase = i * 0.85;
-            var pivot = world.Create(new Name($"{planet.Name} orbit"), new Transform { Parent = sun, IgnoreParentScale = true },
-                new OrbitMotion(planet.Distance, phase, Math.Tau / (planet.Days * 24)));
-            var body = world.Create(new Name(planet.Name), new Transform { Parent = pivot, LocalScale = new(planet.Radius) },
+            var orbit = OrbitMotion.FromPeriod(planet.Distance, planet.Days * 24, phase: i * 0.85);
+            var body = world.Create(new Name(planet.Name), new Transform
+                { Parent = sun, IgnoreParentScale = true, LocalPosition = orbit.LocalPosition, LocalScale = new(planet.Radius) },
+                orbit,
                 new MeshRenderer(planet.Name == "Earth" ? earthMesh : sphere) { Tint = planet.Color },
                 new DistantMarker(planet.Name == "Earth" ? new(0.35f, 0.65f, 1, 1) : planet.Color));
-            world.Create(new Name($"{planet.Name} path"), new Transform { Parent = sun, IgnoreParentScale = true },
-                LineRenderer.Circle(planet.Distance, new(0.15f, 0.2f, 0.3f, 1), 2048));
+            world.Create(new Name($"{planet.Name} path"), new Transform { Parent = body },
+                LineRenderer.Circle(orbit.Radius, new(0.15f, 0.2f, 0.3f, 1), 2048) with { UseWorldSpace = true });
             if (planet.Name == "Earth")
             {
                 earth = body;
-                earthPivot = pivot;
-                var moon = world.Create(new Name("Moon orbit"), new Transform { Parent = pivot }, new OrbitMotion(384.4f, 0, Math.Tau / (27.3 * 24)));
-                world.Create(new Name("Moon"), new Transform { Parent = moon, LocalScale = new(1.7375f) },
+                var lunarOrbit = OrbitMotion.FromPeriod(384.4f, 27.3 * 24);
+                var moon = world.Create(new Name("Moon"), new Transform
+                    { Parent = earth, IgnoreParentScale = true, LocalPosition = lunarOrbit.LocalPosition, LocalScale = new(1.7375f) },
+                    lunarOrbit,
                     new MeshRenderer(sphere) { Tint = new(0.75f, 0.75f, 0.8f, 1) }, new DistantMarker(new(0.75f, 0.75f, 0.8f, 1)));
-                world.Create(new Name("Moon path"), new Transform { Parent = pivot }, LineRenderer.Circle(384.4f, new(0.3f, 0.3f, 0.4f, 1), 256));
+                world.Create(new Name("Moon path"), new Transform
+                    { Parent = moon, IgnoreParentScale = true, LocalPosition = -lunarOrbit.LocalPosition },
+                    new OrbitPath(), LineRenderer.Circle(lunarOrbit.Radius, new(0.3f, 0.3f, 0.4f, 1), 256));
             }
             if (planet.Name == "Saturn")
-                world.Create(new Name("Saturn rings"), new Transform { Parent = pivot, LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 0.47f) },
+                world.Create(new Name("Saturn rings"), new Transform
+                    { Parent = body, IgnoreParentScale = true, LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 0.47f) },
                     LineRenderer.Circle(140.22f, new(0.85f, 0.7f, 0.45f, 1)));
         }
-        var motion = new OrbitSystem(world);
-        motion.Update(0);
         var simulation = new SimulationScheduler(ticksPerSecond: 30);
-        simulation.Add(motion);
+        simulation.Add(new OrbitSystem(world));
         return new(world, backend)
         {
             SelectedEntity = earth,
             FollowSelected = true,
             Simulation = simulation,
             Camera = new(distance: earthRadius * 4.5f, pitch: 0.35f,
-                target: earthPivot.Get<Transform>().LocalPosition, yaw: -MathF.PI / 2 - 1.7f)
+                target: earth.Get<Transform>().LocalPosition, yaw: -MathF.PI / 2 - 1.7f)
             { MinDistance = earthRadius * 1.1f, MaxDistance = 10_000_000, NearClip = 0.1f, FarClip = 10_000_000 },
             Background = new(0.012f, 0.018f, 0.035f, 1),
             DrawOverlay = DrawOverlay,
@@ -100,16 +102,4 @@ public static class SolarSystemDemo
         });
         draw.DrawTriangle(center + new Vector2(-4, -91), center + new Vector2(4, -91), center + new Vector2(0, -98), Vector4.One);
     }
-}
-
-public record struct OrbitMotion(float Radius, double Phase, double AngularSpeed);
-
-public class OrbitSystem(World world) : ISimulationSystem
-{
-    private readonly QueryDescription query = new QueryDescription().WithAll<Transform, OrbitMotion>();
-    public void Update(double deltaTime) => world.Query(in query, (ref Transform transform, ref OrbitMotion orbit) =>
-    {
-        orbit.Phase = (orbit.Phase + orbit.AngularSpeed * deltaTime) % Math.Tau;
-        transform.LocalPosition = orbit.Radius * new Vector3((float)Math.Cos(orbit.Phase), 0, (float)Math.Sin(orbit.Phase));
-    });
 }

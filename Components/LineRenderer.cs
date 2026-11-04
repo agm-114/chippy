@@ -7,6 +7,7 @@ public record struct LineRenderer(ImmutableArray<Vector3> Positions)
 {
     public Vector4 Color = Vector4.One;
     public bool Loop;
+    public bool UseWorldSpace;
     public bool Enabled = true;
     public readonly bool IsRenderable => Enabled && !Positions.IsDefaultOrEmpty && Positions.Length >= 2;
 
