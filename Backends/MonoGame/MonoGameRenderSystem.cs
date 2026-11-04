@@ -37,7 +37,7 @@ public class MonoGameRenderSystem : IRenderSystem
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         device.BlendState = BlendState.Opaque;
-        device.DepthStencilState = DepthStencilState.Default;
+        device.DepthStencilState = primitives.SolidDepth;
         device.RasterizerState = wireframe ? this.wireframe : solid;
         effect.View = view.ToXna();
         effect.Projection = projection.ToXna();
@@ -101,10 +101,10 @@ public class MonoGameRenderSystem : IRenderSystem
         return true;
     }
 
-    public void DrawPrimitives(ReadOnlySpan<PrimitiveVertex> vertices, PrimitiveTopology topology, bool screenSpace = false)
+    public void DrawPrimitives(ReadOnlySpan<PrimitiveVertex> vertices, PrimitiveTopology topology, bool screenSpace = false, bool writeDepth = true)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        primitives.Draw(vertices, topology, screenSpace ? Matrix4x4.Identity : viewProjection, screenSpace);
+        primitives.Draw(vertices, topology, screenSpace ? Matrix4x4.Identity : viewProjection, screenSpace, writeDepth);
     }
 
     public void SetLights(ReadOnlySpan<(Transform Transform, Light Light)> lights) => lighting.SetLights(lights);

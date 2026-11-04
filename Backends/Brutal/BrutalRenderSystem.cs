@@ -57,12 +57,13 @@ public class BrutalRenderSystem : IRenderSystem
         }
     }
 
-    public void BeginFrame(in Matrix4x4 view, in Matrix4x4 projection, bool wireframe = false)
+    public unsafe void BeginFrame(in Matrix4x4 view, in Matrix4x4 projection, bool wireframe = false)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         program.Use();
         Disable(GlCapability.Blend);
-        Enable(GlCapability.DepthTest);
+        BrutalPrimitives.SetWorldDepth(lines: false);
+        Native.glDepthFunc((GlFunc)GL_LEQUAL);
         PolygonMode(GlFace.FrontAndBack, wireframe ? GL_LINE : GL_FILL);
         // Convert the shared [0, 1] depth convention to OpenGL's [-1, 1].
         var clipDepth = Matrix4x4.Identity;
@@ -116,10 +117,10 @@ public class BrutalRenderSystem : IRenderSystem
         }
     }
 
-    public void DrawPrimitives(ReadOnlySpan<PrimitiveVertex> vertices, PrimitiveTopology topology, bool screenSpace = false)
+    public void DrawPrimitives(ReadOnlySpan<PrimitiveVertex> vertices, PrimitiveTopology topology, bool screenSpace = false, bool writeDepth = true)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        primitives.Draw(vertices, topology, screenSpace ? Matrix4x4.Identity : viewProjection, screenSpace);
+        primitives.Draw(vertices, topology, screenSpace ? Matrix4x4.Identity : viewProjection, screenSpace, writeDepth);
     }
 
     public void SetLights(ReadOnlySpan<(Transform Transform, Light Light)> lights) => lighting.SetLights(lights);

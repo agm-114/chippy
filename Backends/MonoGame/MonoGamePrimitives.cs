@@ -9,9 +9,29 @@ internal class MonoGamePrimitives(GraphicsDevice device) : IDisposable
 {
     private readonly BasicEffect effect = new(device) { VertexColorEnabled = true };
     private readonly RasterizerState rasterizer = new() { CullMode = CullMode.None };
+    public DepthStencilState SolidDepth { get; } = CreateSolidDepth(writeDepth: true);
+    private readonly DepthStencilState markerDepth = CreateSolidDepth(writeDepth: false);
+    private readonly DepthStencilState lineDepth = new()
+    {
+        DepthBufferWriteEnable = false,
+        StencilEnable = true,
+        ReferenceStencil = 0,
+        StencilMask = 1,
+        StencilFunction = CompareFunction.Equal
+    };
     private VertexPositionColor[] vertices = [];
 
-    public void Draw(ReadOnlySpan<PrimitiveVertex> data, PrimitiveTopology topology, in Matrix4x4 matrix, bool screenSpace)
+    private static DepthStencilState CreateSolidDepth(bool writeDepth) => new()
+    {
+        DepthBufferWriteEnable = writeDepth,
+        StencilEnable = true,
+        ReferenceStencil = 1,
+        StencilMask = 1,
+        StencilWriteMask = 1,
+        StencilPass = StencilOperation.Replace
+    };
+
+    public void Draw(ReadOnlySpan<PrimitiveVertex> data, PrimitiveTopology topology, in Matrix4x4 matrix, bool screenSpace, bool writeDepth)
     {
         if (data.IsEmpty) return;
         if (vertices.Length < data.Length) Array.Resize(ref vertices, Math.Max(data.Length, vertices.Length * 2));
@@ -23,19 +43,29 @@ internal class MonoGamePrimitives(GraphicsDevice device) : IDisposable
         effect.World = effect.View = Xna.Matrix.Identity;
         effect.Projection = matrix.ToXna();
         device.BlendState = BlendState.NonPremultiplied;
-        device.DepthStencilState = screenSpace ? DepthStencilState.None : DepthStencilState.Default;
+        device.DepthStencilState = screenSpace ? DepthStencilState.None
+            : topology != PrimitiveTopology.Triangles ? lineDepth
+            : writeDepth ? SolidDepth : markerDepth;
         device.RasterizerState = rasterizer;
-        var kind = topology == PrimitiveTopology.Lines ? PrimitiveType.LineList : PrimitiveType.TriangleList;
+        var (kind, count) = topology switch
+        {
+            PrimitiveTopology.Lines => (PrimitiveType.LineList, data.Length / 2),
+            PrimitiveTopology.LineStrip => (PrimitiveType.LineStrip, data.Length - 1),
+            _ => (PrimitiveType.TriangleList, data.Length / 3)
+        };
         foreach (var pass in effect.CurrentTechnique.Passes)
         {
             pass.Apply();
-            device.DrawUserPrimitives(kind, vertices, 0, data.Length / (topology == PrimitiveTopology.Lines ? 2 : 3));
+            device.DrawUserPrimitives(kind, vertices, 0, count);
         }
     }
 
     public void Dispose()
     {
         rasterizer.Dispose();
+        SolidDepth.Dispose();
+        markerDepth.Dispose();
+        lineDepth.Dispose();
         effect.Dispose();
     }
 }

@@ -49,12 +49,16 @@ internal unsafe class BrutalPrimitives : IDisposable
         catch { Dispose(); throw; }
     }
 
-    public void Draw(ReadOnlySpan<PrimitiveVertex> vertices, PrimitiveTopology topology, in Matrix4x4 matrix, bool screenSpace)
+    public void Draw(ReadOnlySpan<PrimitiveVertex> vertices, PrimitiveTopology topology, in Matrix4x4 matrix, bool screenSpace, bool writeDepth)
     {
         if (vertices.IsEmpty) return;
         program.Use();
-        if (screenSpace) Disable(GlCapability.DepthTest);
-        else Enable(GlCapability.DepthTest);
+        if (screenSpace)
+        {
+            Disable(GlCapability.DepthTest);
+            Disable(GlCapability.StencilTest);
+        }
+        else SetWorldDepth(topology != PrimitiveTopology.Triangles, writeDepth);
         Disable(GlCapability.CullFace);
         Enable(GlCapability.Blend);
         Native.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -65,7 +69,25 @@ internal unsafe class BrutalPrimitives : IDisposable
         buffers[0].Bind(GlBindTarget.ArrayBuffer);
         fixed (PrimitiveVertex* pointer = vertices)
             Native.glBufferData((GlEnum)(uint)GlBindTarget.ArrayBuffer, vertices.Length * sizeof(PrimitiveVertex), pointer, GL_DYNAMIC_DRAW);
-        Native.glDrawArrays(topology == PrimitiveTopology.Lines ? GL_LINES : GL_TRIANGLES, 0, vertices.Length);
+        var mode = topology switch
+        {
+            PrimitiveTopology.Lines => GL_LINES,
+            PrimitiveTopology.LineStrip => GL_LINE_STRIP,
+            _ => GL_TRIANGLES
+        };
+        Native.glDrawArrays(mode, 0, vertices.Length);
+        Disable(GlCapability.StencilTest);
+        Native.glDepthMask(true);
+    }
+
+    internal static void SetWorldDepth(bool lines, bool writeDepth = true)
+    {
+        Enable(GlCapability.DepthTest);
+        Enable(GlCapability.StencilTest);
+        Native.glDepthMask(!lines && writeDepth);
+        Native.glStencilMask(1);
+        Native.glStencilFunc((GlFunc)(lines ? GL_EQUAL : GL_ALWAYS), lines ? 0 : 1, 1);
+        Native.glStencilOp((GlStencilOp)GL_KEEP, (GlStencilOp)GL_KEEP, (GlStencilOp)(lines ? GL_KEEP : GL_REPLACE));
     }
 
     public void Dispose()

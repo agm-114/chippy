@@ -12,6 +12,6 @@ public interface IRenderSystem : IDisposable
     void BeginFrame(in Matrix4x4 view, in Matrix4x4 projection, bool wireframe = false);
     void SetLights(ReadOnlySpan<(Transform Transform, Light Light)> lights);
     void DrawMesh(in Transform transform, in MeshRenderer meshRenderer);
-    void DrawPrimitives(ReadOnlySpan<PrimitiveVertex> vertices, PrimitiveTopology topology, bool screenSpace = false);
+    void DrawPrimitives(ReadOnlySpan<PrimitiveVertex> vertices, PrimitiveTopology topology, bool screenSpace = false, bool writeDepth = true);
     bool ReleaseMesh(Mesh mesh);
 }

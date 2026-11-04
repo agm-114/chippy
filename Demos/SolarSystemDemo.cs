@@ -20,6 +20,7 @@ public static class SolarSystemDemo
         const float earthDistance = 149_600, earthRadius = 6.378f;
         world.Create(new Name("Sun"), new Transform { LocalScale = new(695.7f) },
             new MeshRenderer(sphere) { Tint = new(1, 0.85f, 0.55f, 1), Unlit = true },
+            new DistantMarker(new(1, 0.85f, 0.55f, 1)),
             new Light { Intensity = earthDistance * earthDistance, Color = new(1, 0.97f, 0.9f) });
         (string Name, float Distance, float Radius, double Days, Vector4 Color)[] planets =
         [
@@ -41,7 +42,8 @@ public static class SolarSystemDemo
             var pivot = world.Create(new Name($"{planet.Name} orbit"), new Transform(),
                 new OrbitMotion(planet.Distance, phase, Math.Tau / (planet.Days * 24)));
             var body = world.Create(new Name(planet.Name), new Transform { Parent = pivot, LocalScale = new(planet.Radius) },
-                new MeshRenderer(planet.Name == "Earth" ? CreateEarth(sphere) : sphere) { Tint = planet.Color });
+                new MeshRenderer(planet.Name == "Earth" ? CreateEarth(sphere) : sphere) { Tint = planet.Color },
+                new DistantMarker(planet.Name == "Earth" ? new(0.35f, 0.65f, 1, 1) : planet.Color));
             world.Create(new Name($"{planet.Name} path"), new Transform(),
                 LineRenderer.Circle(planet.Distance, new(0.15f, 0.2f, 0.3f, 1), 2048));
             if (planet.Name == "Earth")
@@ -50,7 +52,7 @@ public static class SolarSystemDemo
                 earthPivot = pivot;
                 var moon = world.Create(new Name("Moon orbit"), new Transform { Parent = pivot }, new OrbitMotion(384.4f, 0, Math.Tau / (27.3 * 24)));
                 world.Create(new Name("Moon"), new Transform { Parent = moon, LocalScale = new(1.7375f) },
-                    new MeshRenderer(sphere) { Tint = new(0.75f, 0.75f, 0.8f, 1) });
+                    new MeshRenderer(sphere) { Tint = new(0.75f, 0.75f, 0.8f, 1) }, new DistantMarker(new(0.75f, 0.75f, 0.8f, 1)));
                 world.Create(new Name("Moon path"), new Transform { Parent = pivot }, LineRenderer.Circle(384.4f, new(0.3f, 0.3f, 0.4f, 1), 256));
             }
             if (planet.Name == "Saturn")

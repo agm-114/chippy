@@ -35,6 +35,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
             Glfw.WindowHint((GlfwWindowHint)GlfwContextAttribute.VersionMinor, 1);
             Glfw.WindowHint((GlfwWindowHint)GlfwContextAttribute.OpenGlProfile, Glfw.Constants.GLFW_OPENGL_CORE_PROFILE);
             Glfw.WindowHint(GlfwWindowHint.DepthBits, 24);
+            Glfw.WindowHint(GlfwWindowHint.StencilBits, 8);
             Glfw.WindowHint(GlfwWindowHint.Visible, 0);
             var placement = state.WindowPlacement;
             using var nativeWindow = Glfw.CreateWindow(new GlfwWindow.CreateInfo
@@ -99,7 +100,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                 var color = state.Background;
                 ClearColor(new float4(color.X, color.Y, color.Z, color.W));
                 Viewport(0, 0, size.X, size.Y);
-                Clear(GlClearBit.Color | GlClearBit.Depth);
+                Clear(GlClearBit.Color | GlClearBit.Depth | GlClearBit.Stencil);
                 viewer.Draw(new(size.X, size.Y));
                 var checkFrame = smokeTest && ++frames == 3;
                 if (checkFrame)

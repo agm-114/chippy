@@ -32,6 +32,7 @@ public class ModelViewer : IDisposable
     public long? PublishedTick => published?.Tick;
     public long DisplayedTick { get; private set; }
     public World RenderWorld => published?.World ?? State.World;
+    internal int DrawnMeshAssetCount => scene.DrawnMeshAssetCount;
     public bool HasPreparedTick => HasPreparedWorld && earlyTick;
     public bool ShouldRender => redraw || Now >= nextRenderTime;
     private bool TickEarly => UsesPublishedData && State.PreemptiveTicking;
@@ -166,12 +167,16 @@ public class ModelViewer : IDisposable
         var interval = 1.0 / State.TargetFrameRate;
         nextRenderTime = (Math.Floor(Now / interval) + 1) * interval;
         redraw = false;
-        var view = Matrix4x4.CreateLookAt(State.Camera.Offset, Vector3.Zero, Vector3.UnitY);
-        var projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 4, viewportSize.X / viewportSize.Y,
-            State.Camera.NearClip, State.Camera.FarClip);
+        var camera = State.Camera;
+        var eye = camera.Offset;
+        var view = Matrix4x4.CreateLookAt(eye, Vector3.Zero, Vector3.UnitY);
+        // Keep the far range beyond the target and preserve depth precision in overview shots.
+        var near = MathF.Max(camera.NearClip, camera.Distance * 0.0001f);
+        var far = camera.Distance + camera.FarClip;
+        var projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 4, viewportSize.X / viewportSize.Y, near, far);
         renderSystem.BeginFrame(view, projection, State.Wireframe);
-        scene.Draw(RenderWorld, viewportSize, State.DrawOverlay, State.Camera.Target);
-        drawnCamera = (view, new(projection.M11, projection.M22), State.Camera.Offset, State.Camera.NearClip, State.Camera.FarClip);
+        scene.Draw(RenderWorld, viewportSize, State.DrawOverlay, camera.Target, (view, projection.M22));
+        drawnCamera = (view, new(projection.M11, projection.M22), eye, near, far);
         DisplayedTick = PublishedTick ?? State.Simulation.Tick;
     }
 

@@ -30,7 +30,11 @@ public class RenderWorld(World source) : IDisposable
             var copy = transform;
             copy.Parent = null; // LocalToWorldMatrix is resolved; rendering never follows simulation parents.
             var target = prepared.Create(copy, new SourceEntity(entity));
-            if (hasMesh) prepared.Add(target, renderer);
+            if (hasMesh)
+            {
+                prepared.Add(target, renderer);
+                if (entity.TryGet<DistantMarker>(out var marker)) prepared.Add(target, marker);
+            }
             if (hasLine) prepared.Add(target, line);
             if (hasLight) prepared.Add(target, light);
         });

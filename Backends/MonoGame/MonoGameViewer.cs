@@ -48,6 +48,7 @@ public class MonoGameViewer : Game, IInputSystem
         {
             PreferredBackBufferWidth = state.WindowPlacement?.Width ?? 1280,
             PreferredBackBufferHeight = state.WindowPlacement?.Height ?? 720,
+            PreferredDepthStencilFormat = DepthFormat.Depth24Stencil8,
             GraphicsProfile = GraphicsProfile.HiDef,
             SynchronizeWithVerticalRetrace = false
         };
@@ -97,7 +98,8 @@ public class MonoGameViewer : Game, IInputSystem
         if (!CanDraw || !viewer.ShouldRender)
             return;
         var background = state.Background;
-        GraphicsDevice.Clear(new Color(background.X, background.Y, background.Z, background.W));
+        GraphicsDevice.Clear(ClearOptions.Target | ClearOptions.DepthBuffer | ClearOptions.Stencil,
+            new Color(background.X, background.Y, background.Z, background.W), 1, 0);
         viewer.Draw(new(viewport.Width, viewport.Height));
         var checkFrame = smokeTest && ++frames == 3;
         Color[]? modelPixels = null;

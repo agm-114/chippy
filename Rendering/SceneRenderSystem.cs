@@ -15,9 +15,14 @@ public class SceneRenderSystem(IRenderSystem renderer)
     private readonly QueryDescription lightQuery = new QueryDescription().WithAll<Transform, Light>();
     private readonly List<(Transform, Light)> lights = [];
     private readonly List<(Entity Source, Mesh Mesh, Matrix4x4 Matrix, Vector3 Position)> drawnMeshes = [];
+    private readonly List<(Entity Source, Vector3 Position, Marker Dot, Vector4 Color)> drawnDots = [];
     private readonly PrimitiveBatch primitives = new(renderer);
+    private readonly record struct Marker(Vector3 Center, float Radius, float Depth, float SizeSquared);
 
-    public void Draw(World world, Vector2 viewportSize, Action<World, PrimitiveBatch, Vector2>? drawOverlay = null, Vector3 origin = default)
+    internal int DrawnMeshAssetCount => drawnMeshes.Select(entry => entry.Mesh).Distinct(ReferenceEqualityComparer.Instance).Count();
+
+    public void Draw(World world, Vector2 viewportSize, Action<World, PrimitiveBatch, Vector2>? drawOverlay = null,
+        Vector3 origin = default, (Matrix4x4 View, float ProjectionScale)? camera = null)
     {
         lights.Clear();
         world.Query(in lightQuery, (ref Transform transform, ref Light light) =>
@@ -28,20 +33,55 @@ public class SceneRenderSystem(IRenderSystem renderer)
         });
         renderer.SetLights(CollectionsMarshal.AsSpan(lights));
         drawnMeshes.Clear();
+        drawnDots.Clear();
         world.Query(in meshQuery, (Entity entity, ref Transform transform, ref MeshRenderer meshRenderer) =>
         {
             if (!meshRenderer.Enabled || meshRenderer.SharedMesh is not { } mesh) return;
             var copy = RelativeTo(transform, origin);
-            renderer.DrawMesh(in copy, in meshRenderer);
             var source = entity.TryGet<SourceEntity>(out var link) ? link.Entity : entity;
-            drawnMeshes.Add((source, mesh, copy.LocalToWorldMatrix, transform.LocalToWorldMatrix.Translation));
+            var position = transform.LocalToWorldMatrix.Translation;
+            if (camera is { } frame && entity.TryGet<DistantMarker>(out var marker)
+                && GetMarker(mesh.Bounds, copy.LocalToWorldMatrix, frame.View, frame.ProjectionScale * viewportSize.Y / 2) is { } dot)
+            {
+                drawnDots.Add((source, position, dot, marker.Color));
+                return;
+            }
+            renderer.DrawMesh(in copy, in meshRenderer);
+            drawnMeshes.Add((source, mesh, copy.LocalToWorldMatrix, position));
         });
+        if (camera is { } markerCamera && drawnDots.Count > 0)
+        {
+            drawnDots.Sort(static (a, b) =>
+            {
+                var bySize = a.Dot.SizeSquared.CompareTo(b.Dot.SizeSquared);
+                return bySize != 0 ? bySize : b.Dot.Depth.CompareTo(a.Dot.Depth);
+            });
+            var view = markerCamera.View;
+            var normal = new Vector3(view.M13, view.M23, view.M33);
+            foreach (var (_, _, dot, color) in drawnDots)
+                primitives.DrawMarker(dot.Center + origin, normal, dot.Radius, color);
+        }
         world.Query(in lineQuery, (ref Transform transform, ref LineRenderer line) =>
         {
             if (line.IsRenderable) primitives.DrawPolyline(line.Positions.AsSpan(), transform.LocalToWorldMatrix, line.Color, line.Loop);
         });
         drawOverlay?.Invoke(world, primitives, viewportSize);
         primitives.Flush(viewportSize, origin);
+    }
+
+    private static Marker? GetMarker(Bounds bounds, Matrix4x4 matrix, Matrix4x4 view, float focalLengthPixels)
+    {
+        const float dotRadiusPixels = 3;
+        var center = Vector3.Transform(bounds.Center, matrix);
+        var depth = -Vector3.Transform(center, view).Z;
+        if (depth <= 0 || focalLengthPixels <= 0) return null;
+        var radius = dotRadiusPixels * depth / focalLengthPixels;
+        var size = bounds.Size;
+        var x = Vector3.TransformNormal(new(size.X, 0, 0), matrix).LengthSquared();
+        var y = Vector3.TransformNormal(new(0, size.Y, 0), matrix).LengthSquared();
+        var z = Vector3.TransformNormal(new(0, 0, size.Z), matrix).LengthSquared();
+        var sizeSquared = MathF.Max(x, MathF.Max(y, z));
+        return sizeSquared < 4 * radius * radius ? new(center, radius, depth, sizeSquared) : null;
     }
 
     internal (Entity Entity, Vector3 Position)? Pick(Vector3 eye, Vector3 direction, float near, float far)
@@ -66,6 +106,14 @@ public class SceneRenderSystem(IRenderSystem renderer)
                         hit = (entity, position);
                     }
                 }
+        }
+        // Dots draw from smallest to largest, with depth testing against solid geometry.
+        for (var i = drawnDots.Count - 1; i >= 0; i--)
+        {
+            var (entity, position, marker, _) = drawnDots[i];
+            if (marker.Depth >= near && marker.Depth <= far
+                && Vector3.DistanceSquared(eye + direction * marker.Depth, marker.Center) <= marker.Radius * marker.Radius)
+                return (entity, position);
         }
         return hit;
     }

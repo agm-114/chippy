@@ -3,13 +3,14 @@ using System.Runtime.InteropServices;
 
 namespace Chippy.Rendering;
 
-public enum PrimitiveTopology { Lines, Triangles }
+public enum PrimitiveTopology { Lines, Triangles, LineStrip }
 public record struct PrimitiveVertex(Vector3 Position, Vector4 Color);
 
 // World coordinates for Vector3 overloads; framebuffer pixels, top-left origin, for Vector2 overloads.
 public class PrimitiveBatch(IRenderSystem renderer)
 {
-    private readonly List<PrimitiveVertex> lines = [], triangles = [], overlay = [];
+    private readonly List<PrimitiveVertex> lines = [], stripVertices = [], triangles = [], markers = [], overlay = [];
+    private readonly List<int> stripLengths = [];
 
     public void DrawLine(Vector3 start, Vector3 end, Vector4 color)
     {
@@ -21,13 +22,22 @@ public class PrimitiveBatch(IRenderSystem renderer)
 
     public void DrawPolyline(ReadOnlySpan<Vector3> positions, in Matrix4x4 transform, Vector4 color, bool loop = false)
     {
-        for (var i = 1; i < positions.Length; i++)
-            DrawLine(Vector3.Transform(positions[i - 1], transform), Vector3.Transform(positions[i], transform), color);
+        if (positions.Length < 2) return;
+        var start = stripVertices.Count;
+        foreach (var position in positions)
+            stripVertices.Add(new(Vector3.Transform(position, transform), color));
         if (loop && positions.Length > 2)
-            DrawLine(Vector3.Transform(positions[^1], transform), Vector3.Transform(positions[0], transform), color);
+            stripVertices.Add(stripVertices[start]);
+        stripLengths.Add(stripVertices.Count - start);
     }
 
-    public void DrawCircle(Vector3 center, Vector3 normal, float radius, Vector4 color, int segments = 64)
+    public void DrawCircle(Vector3 center, Vector3 normal, float radius, Vector4 color, int segments = 64, bool filled = false) =>
+        DrawCircle(center, normal, radius, color, segments, filled ? triangles : null);
+
+    internal void DrawMarker(Vector3 center, Vector3 normal, float radius, Vector4 color) =>
+        DrawCircle(center, normal, radius, color, 12, markers);
+
+    private void DrawCircle(Vector3 center, Vector3 normal, float radius, Vector4 color, int segments, List<PrimitiveVertex>? fill)
     {
         ValidateCircle(radius, segments);
         if (!float.IsFinite(normal.LengthSquared()) || normal.LengthSquared() < 1e-12f)
@@ -35,14 +45,18 @@ public class PrimitiveBatch(IRenderSystem renderer)
         normal = Vector3.Normalize(normal);
         var right = Vector3.Normalize(Vector3.Cross(normal, Math.Abs(normal.Y) < 0.99f ? Vector3.UnitY : Vector3.UnitX));
         var up = Vector3.Cross(right, normal);
-        var previous = center + right * radius;
+        var first = center + right * radius;
+        var previous = first;
+        if (fill is null) stripVertices.Add(new(first, color));
         for (var i = 1; i <= segments; i++)
         {
             var angle = i * MathF.Tau / segments;
-            var next = center + radius * (right * MathF.Cos(angle) + up * MathF.Sin(angle));
-            DrawLine(previous, next, color);
+            var next = i == segments ? first : center + radius * (right * MathF.Cos(angle) + up * MathF.Sin(angle));
+            if (fill is not null) AddTriangle(fill, center, previous, next, color);
+            else stripVertices.Add(new(next, color));
             previous = next;
         }
+        if (fill is null) stripLengths.Add(segments + 1);
     }
 
     public void DrawWireSphere(Vector3 center, float radius, Vector4 color, int segments = 64)
@@ -99,13 +113,19 @@ public class PrimitiveBatch(IRenderSystem renderer)
     public void DrawCircle(Vector2 center, float radius, Vector4 color, bool filled = false, float thickness = 1, int segments = 64)
     {
         ValidateCircle(radius, segments);
-        var previous = center + new Vector2(radius, 0);
+        if (!filled && (!float.IsFinite(thickness) || thickness <= 0)) throw new ArgumentOutOfRangeException(nameof(thickness));
+        var inner = filled ? 0 : MathF.Max(0, radius - thickness / 2);
+        var outer = filled ? radius : radius + thickness / 2;
+        var previous = Vector2.UnitX;
         for (var i = 1; i <= segments; i++)
         {
             var angle = i * MathF.Tau / segments;
-            var next = center + radius * new Vector2(MathF.Cos(angle), MathF.Sin(angle));
-            if (filled) DrawTriangle(center, previous, next, color);
-            else DrawLine(previous, next, color, thickness);
+            var next = i == segments ? Vector2.UnitX : new Vector2(MathF.Cos(angle), MathF.Sin(angle));
+            var previousOuter = center + outer * previous;
+            var nextOuter = center + outer * next;
+            var previousInner = center + inner * previous;
+            DrawTriangle(previousInner, previousOuter, nextOuter, color);
+            if (inner > 0) DrawTriangle(previousInner, nextOuter, center + inner * next, color);
             previous = next;
         }
     }
@@ -115,15 +135,29 @@ public class PrimitiveBatch(IRenderSystem renderer)
         if (viewportSize.X <= 0 || viewportSize.Y <= 0 || !float.IsFinite(viewportSize.LengthSquared()))
             throw new ArgumentOutOfRangeException(nameof(viewportSize));
         foreach (ref var vertex in CollectionsMarshal.AsSpan(lines)) vertex.Position -= origin;
+        var strips = CollectionsMarshal.AsSpan(stripVertices);
+        foreach (ref var vertex in strips) vertex.Position -= origin;
         foreach (ref var vertex in CollectionsMarshal.AsSpan(triangles)) vertex.Position -= origin;
-        if (lines.Count > 0) renderer.DrawPrimitives(CollectionsMarshal.AsSpan(lines), PrimitiveTopology.Lines);
+        foreach (ref var vertex in CollectionsMarshal.AsSpan(markers)) vertex.Position -= origin;
+        // Solid primitives mark their coverage before the background lines draw.
         if (triangles.Count > 0) renderer.DrawPrimitives(CollectionsMarshal.AsSpan(triangles), PrimitiveTopology.Triangles);
+        if (markers.Count > 0) renderer.DrawPrimitives(CollectionsMarshal.AsSpan(markers), PrimitiveTopology.Triangles, writeDepth: false);
+        if (lines.Count > 0) renderer.DrawPrimitives(CollectionsMarshal.AsSpan(lines), PrimitiveTopology.Lines);
+        var stripStart = 0;
+        foreach (var length in stripLengths)
+        {
+            renderer.DrawPrimitives(strips.Slice(stripStart, length), PrimitiveTopology.LineStrip);
+            stripStart += length;
+        }
         var screen = CollectionsMarshal.AsSpan(overlay);
         foreach (ref var vertex in screen)
             vertex.Position = new(2 * vertex.Position.X / viewportSize.X - 1, 1 - 2 * vertex.Position.Y / viewportSize.Y, 0);
         if (screen.Length > 0) renderer.DrawPrimitives(screen, PrimitiveTopology.Triangles, screenSpace: true);
         lines.Clear();
+        stripVertices.Clear();
+        stripLengths.Clear();
         triangles.Clear();
+        markers.Clear();
         overlay.Clear();
     }
 

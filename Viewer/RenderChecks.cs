@@ -31,8 +31,9 @@ internal static class RenderChecks
             meshes.Add(mesh);
             count++;
         });
-        if (renderer.UploadedMeshCount != meshes.Count)
+        // Distant markers can replace mesh submissions, and previously uploaded meshes stay cached.
+        if (renderer.UploadedMeshCount < viewer.DrawnMeshAssetCount || renderer.UploadedMeshCount > meshes.Count)
             throw new InvalidOperationException("Mesh GPU resource sharing check failed.");
-        Console.WriteLine($"Mesh check passed: {count} renderable entities share {renderer.UploadedMeshCount} uploaded meshes.");
+        Console.WriteLine($"Mesh check passed: {count} mesh entities, {renderer.UploadedMeshCount} cached meshes.");
     }
 }
