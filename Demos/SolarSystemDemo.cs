@@ -16,7 +16,7 @@ public static class SolarSystemDemo
 {
     public static ViewerState Create(World world, RenderBackend backend)
     {
-        var sphere = Mesh.CreateSphere();
+        var sphere = Mesh.CreateIcosphere();
         const float earthDistance = 149_600, earthRadius = 6.378f;
         world.Create(new Name("Sun"), new Transform { LocalScale = new(695.7f) },
             new MeshRenderer(sphere) { Tint = new(1, 0.85f, 0.55f, 1), Unlit = true },

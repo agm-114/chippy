@@ -42,6 +42,71 @@ public partial class Mesh
         return Revolve(profile, normals, segments);
     }
 
+    /// <summary>Creates a sphere with more evenly sized triangles by subdividing an icosahedron.</summary>
+    public static Mesh CreateIcosphere(int subdivisions = 3, float radius = 1)
+    {
+        Positive(radius, nameof(radius));
+        if (subdivisions is < 0 or > 8) throw new ArgumentOutOfRangeException(nameof(subdivisions));
+
+        var t = (1 + MathF.Sqrt(5)) / 2;
+        List<Vector3> directions =
+        [
+            new(-1, t, 0), new(1, t, 0), new(-1, -t, 0), new(1, -t, 0),
+            new(0, -1, t), new(0, 1, t), new(0, -1, -t), new(0, 1, -t),
+            new(t, 0, -1), new(t, 0, 1), new(-t, 0, -1), new(-t, 0, 1)
+        ];
+        for (var i = 0; i < directions.Count; i++) directions[i] = Vector3.Normalize(directions[i]);
+
+        uint[] indices =
+        [
+            0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11,
+            1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
+            3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9,
+            4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1
+        ];
+
+        // Adjacent triangles share one projected midpoint for each undirected edge.
+        Dictionary<(uint, uint), uint> midpoints = [];
+        for (var level = 0; level < subdivisions; level++)
+        {
+            midpoints.Clear();
+            var refined = new uint[indices.Length * 4];
+            for (var i = 0; i < indices.Length; i += 3)
+            {
+                var (a, b, c) = (indices[i], indices[i + 1], indices[i + 2]);
+                var ab = Midpoint(a, b);
+                var bc = Midpoint(b, c);
+                var ca = Midpoint(c, a);
+                var offset = i * 4;
+                WriteFace(refined, offset, a, ab, ca);
+                WriteFace(refined, offset + 3, b, bc, ab);
+                WriteFace(refined, offset + 6, c, ca, bc);
+                WriteFace(refined, offset + 9, ab, bc, ca);
+            }
+            indices = refined;
+        }
+
+        var vertices = directions.Select(normal => new Vertex(normal * radius, normal)).ToArray();
+        return new([new(vertices, indices, Vector4.One)]);
+
+        uint Midpoint(uint a, uint b)
+        {
+            var edge = a < b ? (a, b) : (b, a);
+            if (midpoints.TryGetValue(edge, out var index)) return index;
+            index = (uint)directions.Count;
+            directions.Add(Vector3.Normalize(directions[(int)a] + directions[(int)b]));
+            midpoints.Add(edge, index);
+            return index;
+        }
+
+        static void WriteFace(uint[] buffer, int offset, uint a, uint b, uint c)
+        {
+            buffer[offset] = a;
+            buffer[offset + 1] = b;
+            buffer[offset + 2] = c;
+        }
+    }
+
     public static Mesh CreateCylinder(float radius = 0.5f, float height = 2, int segments = 32) =>
         CreateFrustum(radius, radius, height, segments);
 
