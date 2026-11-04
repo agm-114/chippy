@@ -2,18 +2,22 @@ using System.Diagnostics;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using Chippy.Audio;
+using Chippy.Simulation;
 
 namespace Chippy.Viewer;
 
 public class ViewerPanel : IDisposable
 {
+    private static readonly double[] SpeedMultipliers = [0.25, 0.5, 1, 2, 5, 10];
     private readonly ImGuiContextPtr context;
-    private readonly string name;
     private readonly ViewerState state;
     private readonly ModelViewer viewer;
     private readonly Stopwatch timer = Stopwatch.StartNew();
     private readonly EntityHierarchy hierarchy;
     private readonly EntityInspector inspector;
+    private long tickSampleStart = Stopwatch.GetTimestamp();
+    private long tickSampleCount;
+    private double sampledTargetRate, achievedTickRate;
     private bool disposed;
 
     public bool WantsKeyboard => ImGui.GetIO().WantCaptureKeyboard;
@@ -21,10 +25,9 @@ public class ViewerPanel : IDisposable
     public bool HasPendingInput => context.InputEventsQueue.Count > 0;
     public bool HasDrawData { get; private set; }
 
-    public unsafe ViewerPanel(ModelViewer viewer, string name)
+    public unsafe ViewerPanel(ModelViewer viewer)
     {
         state = viewer.State;
-        this.name = name;
         this.viewer = viewer;
         hierarchy = new(state);
         inspector = new(state, hierarchy);
@@ -54,6 +57,7 @@ public class ViewerPanel : IDisposable
             if (!io.WantCaptureMouse && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                 viewer.SelectAt(new(io.MousePos.X, io.MousePos.Y), new(io.DisplaySize.X, io.DisplaySize.Y));
             DrawViewerControls();
+            DrawTimeControls();
             hierarchy.Draw();
             changed |= inspector.Draw();
             ImGui.Render();
@@ -80,12 +84,11 @@ public class ViewerPanel : IDisposable
         if (contentsVisible)
         {
             ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X * 0.55f);
-            ImGui.TextWrapped(name);
             var fps = ImGui.GetIO().Framerate;
             ImGui.Text($"{fps:F0} UI updates/s");
 
             DrawRendererControls();
-            DrawSimulationControls();
+            DrawSimulationSettings();
             DrawAudioControls();
 
             if (ImGui.CollapsingHeader("Camera"u8)) DrawCameraControls();
@@ -142,28 +145,65 @@ public class ViewerPanel : IDisposable
         ImGui.EndCombo();
     }
 
-    private void DrawSimulationControls()
+    private void DrawSimulationSettings()
     {
-        var simulation = state.Simulation;
         ImGui.SeparatorText("Simulation"u8);
-        ImGui.TextWrapped($"Tick {simulation.Tick:N0} · {simulation.ElapsedTime:F1} simulated seconds");
         ImGui.Checkbox("Publish render data"u8, ref state.PublishRenderData);
         ImGui.BeginDisabled(!state.PublishRenderData);
         ImGui.Checkbox("Preemptive ticking"u8, ref state.PreemptiveTicking);
         ImGui.EndDisabled();
         if (viewer.UsesPublishedData)
-            ImGui.TextWrapped($"Displayed {viewer.DisplayedTick:N0} · working {simulation.Tick:N0}");
-        var paused = simulation.Paused;
-        if (ImGui.Checkbox("Paused"u8, ref paused))
-            simulation.Paused = paused;
-        ImGui.SameLine();
-        ImGui.BeginDisabled(!simulation.Paused);
-        if (ImGui.Button("Step"u8))
-            viewer.StepSimulation();
-        ImGui.EndDisabled();
-        var speed = (float)simulation.Speed;
-        if (ImGui.SliderFloat("Speed"u8, ref speed, 0, 10, "%.1fx"u8, ImGuiSliderFlags.AlwaysClamp))
-            simulation.Speed = speed;
+            ImGui.TextWrapped($"Displayed {viewer.DisplayedTick:N0} · working {state.Simulation.Tick:N0}");
+    }
+
+    private void DrawTimeControls()
+    {
+        var display = ImGui.GetIO().DisplaySize;
+        const float width = 300;
+        var simulation = state.Simulation;
+        if (state.TimeControlsWindow.Begin("Time Controls"u8, new(Math.Max(12, (display.X - width) / 2), 12), new(width, 150)))
+        {
+            ImGui.BeginDisabled(simulation.IsRunning);
+            if (ImGui.Button("Play"u8))
+            {
+                if (simulation.Speed == 0) simulation.Speed = 1;
+                simulation.Paused = false;
+            }
+            ImGui.EndDisabled();
+            ImGui.SameLine();
+            ImGui.BeginDisabled(!simulation.IsRunning);
+            if (ImGui.Button("Pause"u8)) simulation.Paused = true;
+            ImGui.EndDisabled();
+            ImGui.SameLine();
+            ImGui.BeginDisabled(simulation.IsRunning);
+            if (ImGui.Button("Step"u8)) viewer.StepSimulation();
+            ImGui.EndDisabled();
+
+            if (ImGui.BeginCombo("Speed"u8, $"{simulation.Speed:0.##}×"))
+            {
+                foreach (var multiplier in SpeedMultipliers)
+                    if (ImGui.Selectable($"{multiplier:0.##}×", simulation.Speed == multiplier))
+                        simulation.Speed = multiplier;
+                ImGui.EndCombo();
+            }
+            SampleTickRate(simulation);
+            ImGui.Text($"Tick rate  {achievedTickRate:0.#} / {simulation.TargetTickRate:0.#} Hz");
+            ImGui.Text($"Tick {simulation.Tick:N0} · {simulation.ElapsedTime:F1} sim seconds");
+        }
+        ImGui.End();
+    }
+
+    private void SampleTickRate(SimulationScheduler simulation)
+    {
+        var now = Stopwatch.GetTimestamp();
+        var target = simulation.IsRunning ? simulation.TargetTickRate : 0;
+        var elapsed = Stopwatch.GetElapsedTime(tickSampleStart, now).TotalSeconds;
+        if (target > 0 && target == sampledTargetRate && elapsed < 1) return;
+
+        achievedTickRate = target > 0 && target == sampledTargetRate ? (simulation.Tick - tickSampleCount) / elapsed : 0;
+        sampledTargetRate = target;
+        tickSampleCount = simulation.Tick;
+        tickSampleStart = now;
     }
 
     private void DrawAudioControls()

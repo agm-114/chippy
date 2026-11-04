@@ -30,11 +30,11 @@ public class MonoGameViewerUi : IDisposable
     public bool WantsMouse => panel.WantsMouse;
     public bool HasPendingInput => panel.HasPendingInput;
 
-    public MonoGameViewerUi(Game game, ModelViewer viewer, string name)
+    public MonoGameViewerUi(Game game, ModelViewer viewer)
     {
         this.game = game;
         device = game.GraphicsDevice;
-        panel = new ViewerPanel(viewer, name);
+        panel = new ViewerPanel(viewer);
         try
         {
             effect = new BasicEffect(device) { VertexColorEnabled = true, TextureEnabled = true };

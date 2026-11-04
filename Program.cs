@@ -50,7 +50,7 @@ try
     else
     {
         state = SolarSystemDemo.Create(world, renderer);
-        name = "Solar system · 1 unit = 1,000 km · 1 second = 1 hour";
+        name = "Solar system";
     }
     using var audio = new AudioSystem();
     state.Audio = audio;

@@ -15,9 +15,9 @@ public class BrutalViewerUi : IDisposable
     public bool WantsMouse => panel.WantsMouse;
     public bool HasPendingInput => panel.HasPendingInput;
 
-    public BrutalViewerUi(GlfwWindow window, ModelViewer viewer, string name)
+    public BrutalViewerUi(GlfwWindow window, ModelViewer viewer)
     {
-        panel = new ViewerPanel(viewer, name);
+        panel = new ViewerPanel(viewer);
         GlfwBackend? initializedPlatform = null;
         try
         {

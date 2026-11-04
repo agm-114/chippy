@@ -25,6 +25,7 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
     public bool PanelCollapsed;
     internal EditorWindowLayout HierarchyWindow;
     internal EditorWindowLayout InspectorWindow;
+    internal EditorWindowLayout TimeControlsWindow;
     public bool Wireframe;
     public bool AutoRotate;
     public bool FollowSelected;

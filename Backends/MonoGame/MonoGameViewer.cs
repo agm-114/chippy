@@ -13,7 +13,6 @@ public class MonoGameViewer : Game, IInputSystem
 {
     private readonly Func<GraphicsDevice, IRenderSystem> createRenderSystem;
     private readonly ViewerState state;
-    private readonly string name;
     private readonly bool smokeTest;
     private IRenderSystem? renderer;
     private ModelViewer viewer = null!;
@@ -42,7 +41,6 @@ public class MonoGameViewer : Game, IInputSystem
     {
         this.createRenderSystem = createRenderSystem;
         this.state = state;
-        this.name = name;
         this.smokeTest = smokeTest;
         _ = new GraphicsDeviceManager(this)
         {
@@ -66,7 +64,7 @@ public class MonoGameViewer : Game, IInputSystem
             Window.Position = new(saved.X, saved.Y);
         renderer = createRenderSystem(GraphicsDevice);
         viewer = new ModelViewer(renderer, this, state);
-        ui = new MonoGameViewerUi(this, viewer, name);
+        ui = new MonoGameViewerUi(this, viewer);
     }
 
     protected override void Update(GameTime gameTime)

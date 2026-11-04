@@ -9,6 +9,7 @@ public class SimulationScheduler
     private double speed = 1;
     private bool stepping;
     public int TicksPerSecond { get; }
+    public double TargetTickRate => Speed * TicksPerSecond;
     public int MaxTicksPerFrame { get; }
     public double TickDuration => 1.0 / TicksPerSecond;
     public long Tick { get; private set; }
@@ -16,10 +17,10 @@ public class SimulationScheduler
     public bool Paused { get; set; }
     public bool IsRunning => !Paused && Speed > 0;
     public double SecondsUntilNextTick => !IsRunning ? double.PositiveInfinity
-        : Math.Max(0, 1 - pendingTicks - 1e-9) / (Speed * TicksPerSecond);
+        : Math.Max(0, 1 - pendingTicks - 1e-9) / TargetTickRate;
     internal bool ReservedTickIsDue => pendingTicks >= -1e-9;
     internal double SecondsUntilPublication => !IsRunning ? double.PositiveInfinity
-        : Math.Max(0, -pendingTicks) / (Speed * TicksPerSecond);
+        : Math.Max(0, -pendingTicks) / TargetTickRate;
     public double Speed
     {
         get => speed;

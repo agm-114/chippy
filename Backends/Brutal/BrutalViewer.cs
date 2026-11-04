@@ -54,7 +54,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                 nativeWindow.Visible = true;
             try
             {
-                return new BrutalViewer(nativeWindow).RunLoop(createRenderSystem, state, name, smokeTest);
+                return new BrutalViewer(nativeWindow).RunLoop(createRenderSystem, state, smokeTest);
             }
             finally
             {
@@ -72,11 +72,11 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
         }
     }
 
-    private bool RunLoop(Func<IRenderSystem> createRenderSystem, ViewerState state, string name, bool smokeTest)
+    private bool RunLoop(Func<IRenderSystem> createRenderSystem, ViewerState state, bool smokeTest)
     {
         using var renderer = createRenderSystem();
         using var viewer = new ModelViewer(renderer, this, state);
-        using var ui = new BrutalViewerUi(window, viewer, name);
+        using var ui = new BrutalViewerUi(window, viewer);
         var frames = 0;
         window.OnScroll += OnScroll;
 
