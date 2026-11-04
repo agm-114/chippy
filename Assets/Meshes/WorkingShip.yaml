@@ -1,0 +1,190 @@
+worldRotation: [90, 0, 0]
+parts:
+  - id: 1
+    primitive: Truncated Cone
+    parent: 0
+    socket: Origin
+    mount: Bottom
+    size: [1, 0.76, 1]
+    tipPercent: 71
+  - id: 2
+    primitive: Cylinder
+    parent: 1
+    socket: Bottom
+    mount: Bottom
+    size: [1, 2, 1]
+  - id: 3
+    primitive: Cylinder
+    parent: 2
+    socket: Top
+    mount: Bottom
+    size: [1, 2, 1]
+    radialSockets: 8
+  - id: 4
+    primitive: Cylinder
+    parent: 3
+    socket: Radial 225°
+    mount: Right
+    size: [0.75, 2, 0.75]
+  - id: 5
+    primitive: Cylinder
+    parent: 3
+    socket: Radial 135°
+    mount: Right
+    size: [0.75, 2, 0.75]
+  - id: 6
+    primitive: Cylinder
+    parent: 3
+    socket: Radial 315°
+    mount: Right
+    size: [0.75, 2, 0.75]
+  - id: 7
+    primitive: Cylinder
+    parent: 3
+    socket: Radial 45°
+    mount: Right
+    size: [0.75, 2, 0.75]
+  - id: 8
+    primitive: Cube
+    parent: 3
+    socket: Left
+    mount: Bottom
+    size: [1, 2, 0.1]
+  - id: 9
+    primitive: Truncated Cone
+    parent: 4
+    socket: Bottom
+    mount: Bottom
+    size: [0.75, 0.25, 0.75]
+    tipPercent: 65
+  - id: 10
+    primitive: Truncated Cone
+    parent: 5
+    socket: Bottom
+    mount: Bottom
+    size: [0.75, 0.25, 0.75]
+    tipPercent: 65
+  - id: 11
+    primitive: Truncated Cone
+    parent: 6
+    socket: Bottom
+    mount: Bottom
+    size: [0.75, 0.25, 0.75]
+    tipPercent: 65
+  - id: 12
+    primitive: Truncated Cone
+    parent: 7
+    socket: Bottom
+    mount: Bottom
+    size: [0.75, 0.25, 0.75]
+    tipPercent: 65
+  - id: 13
+    primitive: Truncated Cone
+    parent: 3
+    socket: Top
+    mount: Top
+    size: 0.5
+    color: 0.14767933
+    tipPercent: 65
+  - id: 14
+    primitive: Truncated Cone
+    parent: 4
+    socket: Top
+    mount: Top
+    size: 0.5
+    color: 0.14767933
+    tipPercent: 65
+  - id: 15
+    primitive: Truncated Cone
+    parent: 6
+    socket: Top
+    mount: Top
+    size: 0.5
+    color: 0.14767933
+    tipPercent: 65
+  - id: 16
+    primitive: Truncated Cone
+    parent: 7
+    socket: Top
+    mount: Top
+    size: 0.5
+    color: 0.14767933
+    tipPercent: 65
+  - id: 17
+    primitive: Truncated Cone
+    parent: 5
+    socket: Top
+    mount: Top
+    size: 0.5
+    color: 0.14767933
+    tipPercent: 65
+  - id: 18
+    primitive: Cube
+    parent: 8
+    socket: Top
+    mount: Bottom
+    size: [0.75, 2, 0.1]
+  - id: 19
+    primitive: Cube
+    parent: 3
+    socket: Right
+    mount: Bottom
+    size: [1, 2, 0.1]
+  - id: 20
+    primitive: Cube
+    parent: 3
+    socket: Back
+    mount: Bottom
+    size: [1, 2, 0.1]
+    roll: 90
+  - id: 21
+    primitive: Cube
+    parent: 3
+    socket: Front
+    mount: Bottom
+    size: [1, 2, 0.1]
+    roll: 90
+  - id: 22
+    primitive: Cube
+    parent: 19
+    socket: Top
+    mount: Bottom
+    size: [0.75, 2, 0.1]
+  - id: 23
+    primitive: Cube
+    parent: 21
+    socket: Top
+    mount: Bottom
+    size: [0.75, 2, 0.1]
+  - id: 24
+    primitive: Cube
+    parent: 20
+    socket: Top
+    mount: Bottom
+    size: [0.75, 2, 0.1]
+  - id: 25
+    primitive: Cube
+    parent: 2
+    socket: Right
+    mount: Bottom
+    size: [0.5, 1, 0.075]
+  - id: 26
+    primitive: Cube
+    parent: 2
+    socket: Back
+    mount: Bottom
+    size: [0.5, 1, 0.075]
+    roll: 90
+  - id: 27
+    primitive: Cube
+    parent: 2
+    socket: Left
+    mount: Bottom
+    size: [0.5, 1, 0.075]
+  - id: 28
+    primitive: Cube
+    parent: 2
+    socket: Front
+    mount: Bottom
+    size: [0.5, 1, 0.075]
+    roll: 90
