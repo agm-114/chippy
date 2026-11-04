@@ -18,6 +18,7 @@ try
     var renderer = backend == "monogame" ? RenderBackend.MonoGame : RenderBackend.Brutal;
     var smokeTest = args.Contains("--smoke-test");
     var publish = !args.Contains("--no-publish-render-data");
+    var vsync = args.Contains("--vsync");
     var preemptive = args.Contains("--preemptive-ticking");
     var timelinePath = args.FirstOrDefault(arg => arg.StartsWith("--timeline="))?["--timeline=".Length..];
     var timelineDuration = args.FirstOrDefault(arg => arg.StartsWith("--timeline-seconds="))?["--timeline-seconds=".Length..];
@@ -53,6 +54,8 @@ try
         throw new ArgumentException("Use --timeline=<file> to record a timeline.");
     if (preemptive && !publish)
         throw new ArgumentException("Preemptive ticking requires render data publishing.");
+    if (vsync && !publish)
+        throw new ArgumentException("VSync requires render data publishing.");
     using var world = World.Create();
     var modelPath = args.FirstOrDefault(arg => !arg.StartsWith("--"));
     ViewerState state;
@@ -89,6 +92,7 @@ try
     using var audio = new AudioSystem();
     state.Audio = audio;
     state.PublishRenderData = publish;
+    state.VSync = vsync;
     state.PreemptiveTicking = preemptive;
     state.TargetFrameRate = frameRate;
     if (initialSpeed is { } multiplier) state.Simulation.Speed = multiplier;

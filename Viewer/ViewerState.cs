@@ -16,6 +16,8 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
     internal TimelineCapture? Timeline { get; set; }
     public TimeSpan? UniverseTimePerTick { get; init; }
     public bool PublishRenderData = true;
+    public bool VSync;
+    internal bool WantsVSync => PublishRenderData && VSync;
     public bool PreemptiveTicking;
     public bool ShowProfiler;
     public OrbitCamera Camera { get; init; } = new();

@@ -16,6 +16,7 @@ public class ModelViewer : IDisposable
     private readonly TransformSystem transforms;
     private readonly SceneRenderSystem scene;
     private readonly TimeProvider clock;
+    private readonly PacingWait pacingWait;
     private readonly long started;
     private readonly int ownerThread = Environment.CurrentManagedThreadId;
     private PublishedSimulation? published;
@@ -26,20 +27,22 @@ public class ModelViewer : IDisposable
     private bool redraw, disposed;
     private bool uiRefreshPending = true;
     private bool uiAvailable;
+    private bool inputAwaitingUi;
     private long? uiRequestStart, uiRequestRevision, uiRevision;
     private string? uiRequestReason;
-    private (RenderBackend Renderer, bool Published, bool Early, bool Paused, double Rate, int Fps, double MinimumMs)? traceSettings;
+    private (RenderBackend Renderer, bool Published, bool Early, bool VSync, bool Paused, double Rate, int Fps, double MinimumMs)? traceSettings;
     private bool middleHeld, dragging, focusHeld;
     private readonly QueryDescription focusQuery = new QueryDescription().WithAll<Transform>();
     public ViewerState State { get; }
     public bool UsesPublishedData => published is not null;
+    public bool UsesVSync => UsesPublishedData && State.WantsVSync;
     public bool SimulationInProgress => published?.IsStepping == true;
     public long? PublishedTick => published?.Render.Tick;
     public long DisplayedTick { get; private set; }
     public World RenderWorld => published?.Render.World ?? State.World;
     internal int DrawnMeshAssetCount => scene.DrawnMeshAssetCount;
     public bool HasPreparedTick => published?.HasPreparedTick == true;
-    public bool ShouldRender => redraw || Now >= nextRenderTime;
+    public bool ShouldRender => UsesVSync || redraw || Now >= nextRenderTime;
     private double Now => clock.GetElapsedTime(started).TotalSeconds;
 
     public ModelViewer(IRenderSystem renderSystem, IInputSystem input, ViewerState state, TimeProvider? clock = null)
@@ -53,6 +56,7 @@ public class ModelViewer : IDisposable
         started = this.clock.GetTimestamp();
         RecordSettings();
         if (state.PublishRenderData) published = new(state, this.clock);
+        pacingWait = new();
     }
 
     public TimeSpan GetUpdateDelay(bool rendering = true)
@@ -61,7 +65,7 @@ public class ModelViewer : IDisposable
         var updateDelay = published is { } background
             ? background.IsWaitingForUi ? 0.001 : double.PositiveInfinity
             : State.Simulation.SecondsUntilNextTick - (now - previousSimulationTime);
-        var renderDelay = !rendering ? double.PositiveInfinity : redraw ? 0 : nextRenderTime - now;
+        var renderDelay = !rendering || UsesVSync ? double.PositiveInfinity : redraw ? 0 : nextRenderTime - now;
         return TimeSpan.FromSeconds(Math.Clamp(Math.Min(updateDelay, renderDelay), 0, 0.01));
     }
 
@@ -70,10 +74,10 @@ public class ModelViewer : IDisposable
         var delay = GetUpdateDelay(rendering);
         var trace = State.Timeline;
         var start = trace is { IsEnabled: true } ? Stopwatch.GetTimestamp() : 0;
-        Thread.Sleep(delay);
+        pacingWait.Wait(delay);
         if (start == 0) return;
         var end = Stopwatch.GetTimestamp();
-        // Sub-millisecond requests can yield instead of sleeping. Keep yields that measurably delayed the window.
+        // Keep sub-millisecond waits when they measurably delayed the window.
         if (delay.TotalMilliseconds >= 1 || Stopwatch.GetElapsedTime(start, end).TotalMilliseconds >= 0.05)
             trace!.Record("sleep", start, end, detail: $"Requested {delay.TotalMilliseconds:0.###} ms");
     }
@@ -90,6 +94,7 @@ public class ModelViewer : IDisposable
         previousTime = now;
         if (!UpdateCamera(delta, keyboardCaptured, mouseCaptured)) return false;
         uiAvailable = updateUi is not null;
+        inputAwaitingUi = uiAvailable && uiInputPending;
         if (!uiAvailable) uiRequestStart = null;
         else if (uiInputPending || uiRefreshPending) RecordUiRequest(uiInputPending ? "Input" : "Frame refresh");
         if (published is { } background)
@@ -140,6 +145,7 @@ public class ModelViewer : IDisposable
         var changed = updateUi();
         RecordSettings();
         uiRefreshPending = false;
+        inputAwaitingUi = false;
         redraw |= inputPending || changed;
         return changed;
     }
@@ -157,14 +163,15 @@ public class ModelViewer : IDisposable
     {
         if (State.Timeline is not { IsEnabled: true } trace) return;
         var simulation = State.Simulation;
-        var settings = (State.Renderer, State.PublishRenderData, State.PreemptiveTicking, !simulation.IsRunning,
+        var settings = (State.Renderer, State.PublishRenderData, State.PreemptiveTicking, State.WantsVSync, !simulation.IsRunning,
             simulation.TargetTickRate, State.TargetFrameRate, simulation.MinimumTickMilliseconds);
         if (traceSettings == settings) return;
         traceSettings = settings;
         var mode = !State.PublishRenderData ? "Live" : State.PreemptiveTicking ? "Published · early ticks" : "Published";
         var playback = simulation.IsRunning ? "" : " · paused";
         var workload = simulation.MinimumTickMilliseconds > 0 ? $" · {simulation.MinimumTickMilliseconds:0.##} ms minimum tick" : "";
-        trace.Mark("settings", simulation.Tick, detail: $"{State.Renderer} · {mode} · {State.TargetFrameRate} FPS target · {simulation.TargetTickRate:0.##} ticks/s target{playback}{workload}");
+        var framePacing = State.WantsVSync ? "VSync" : $"{State.TargetFrameRate} FPS target";
+        trace.Mark("settings", simulation.Tick, detail: $"{State.Renderer} · {mode} · {framePacing} · {simulation.TargetTickRate:0.##} ticks/s target{playback}{workload}");
     }
 
     private void UpdateClock()
@@ -196,7 +203,7 @@ public class ModelViewer : IDisposable
         EnsureOwner();
         var displayedTick = PublishedTick ?? State.Simulation.Tick;
         var now = Now;
-        if (nextRenderTime > 0 && now >= nextRenderTime)
+        if (!UsesVSync && nextRenderTime > 0 && now >= nextRenderTime)
             State.Timeline?.MarkTarget("frame-target", nextRenderTime - now);
         using var span = State.Timeline?.Measure("frame", displayedTick, published?.Render.Revision, uiRevision,
             redraw ? "Redraw requested" : null);
@@ -204,7 +211,7 @@ public class ModelViewer : IDisposable
         FollowSelection((float)Math.Clamp(Now - previousRenderTime, 0, 0.1));
         previousRenderTime = Now;
         var interval = 1.0 / State.TargetFrameRate;
-        nextRenderTime = (Math.Floor(Now / interval) + 1) * interval;
+        nextRenderTime = UsesVSync ? 0 : (Math.Floor(Now / interval) + 1) * interval;
         redraw = false;
         var camera = State.Camera;
         var eye = camera.Offset;
@@ -223,7 +230,8 @@ public class ModelViewer : IDisposable
             if (uiAvailable)
             {
                 RecordUiRequest("Frame refresh");
-                background.SetUiPending(true);
+                // A frame refresh can wait until the window returns from a synchronized present.
+                background.SetUiPending(!UsesVSync || inputAwaitingUi);
             }
         }
     }
@@ -329,6 +337,7 @@ public class ModelViewer : IDisposable
         if (disposed) return;
         EnsureOwner();
         disposed = true;
-        published?.Dispose();
+        try { published?.Dispose(); }
+        finally { pacingWait.Dispose(); }
     }
 }

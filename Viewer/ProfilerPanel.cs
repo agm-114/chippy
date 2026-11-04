@@ -17,7 +17,7 @@ internal class ProfilerPanel(ViewerState state)
     private float windowMs = 200;
     private double cursor;
     private double targetTicks;
-    private int targetFrames;
+    private int? targetFrames;
     private bool frozen;
 
     public void Draw()
@@ -51,7 +51,7 @@ internal class ProfilerPanel(ViewerState state)
                 timeline.CopyRecent(events);
                 cursor = timeline.ElapsedMs;
                 targetTicks = simulation.IsRunning ? simulation.TargetTickRate : 0;
-                targetFrames = state.TargetFrameRate;
+                targetFrames = state.WantsVSync ? null : state.TargetFrameRate;
             }
             DrawHistory();
         }
@@ -188,7 +188,8 @@ internal class ProfilerPanel(ViewerState state)
         }
         var actual = tickCount * 1000 / duration;
         var fps = frameCount * 1000 / duration;
-        ImGui.TextWrapped($"Ticks {actual:N0} / {targetTicks:N0} Hz   ·   Frames {fps:0.#} / {targetFrames} FPS");
+        var frameTarget = targetFrames is { } targetFps ? $"{fps:0.#} / {targetFps} FPS" : $"{fps:0.#} FPS (VSync)";
+        ImGui.TextWrapped($"Ticks {actual:N0} / {targetTicks:N0} Hz   ·   Frames {frameTarget}");
         var tickAverage = tickCount > 0 ? tickTotal / tickCount : 0;
         var tickBudget = targetTicks > 0 ? $" / {1000 / targetTicks:0.###} ms budget" : "";
         ImGui.TextWrapped($"Tick CPU avg {tickAverage:0.###} ms, max {tickPeak:0.###} ms{tickBudget}");

@@ -132,9 +132,14 @@ public class ViewerPanel : IDisposable
 
     private void DrawRendererControls()
     {
+        ImGui.BeginDisabled(!state.PublishRenderData);
+        ImGui.Checkbox("VSync"u8, ref state.VSync);
+        ImGui.EndDisabled();
+        ImGui.BeginDisabled(state.WantsVSync);
         var targetFrameRate = state.TargetFrameRate;
         if (ImGui.SliderInt("Target FPS"u8, ref targetFrameRate, 15, ViewerState.MaxFrameRate))
             state.TargetFrameRate = targetFrameRate;
+        ImGui.EndDisabled();
         var preview = state.Renderer == RenderBackend.Brutal ? "BRUTAL"u8 : "MonoGame"u8;
         if (!ImGui.BeginCombo("Renderer"u8, preview))
             return;

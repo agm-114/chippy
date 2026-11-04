@@ -13,6 +13,7 @@ public class MonoGameViewer : Game, IInputSystem
 {
     private readonly Func<GraphicsDevice, IRenderSystem> createRenderSystem;
     private readonly ViewerState state;
+    private readonly GraphicsDeviceManager graphics;
     private readonly bool smokeTest;
     private IRenderSystem? renderer;
     private ModelViewer viewer = null!;
@@ -42,13 +43,13 @@ public class MonoGameViewer : Game, IInputSystem
         this.createRenderSystem = createRenderSystem;
         this.state = state;
         this.smokeTest = smokeTest;
-        _ = new GraphicsDeviceManager(this)
+        graphics = new GraphicsDeviceManager(this)
         {
             PreferredBackBufferWidth = state.WindowPlacement?.Width ?? 1280,
             PreferredBackBufferHeight = state.WindowPlacement?.Height ?? 720,
             PreferredDepthStencilFormat = DepthFormat.Depth24Stencil8,
             GraphicsProfile = GraphicsProfile.HiDef,
-            SynchronizeWithVerticalRetrace = false
+            SynchronizeWithVerticalRetrace = state.WantsVSync
         };
         Window.Title = $"Chippy · {name} · MonoGame · Middle drag: orbit | WASD: move | Wheel: zoom";
         Window.AllowUserResizing = true;
@@ -82,10 +83,19 @@ public class MonoGameViewer : Game, IInputSystem
             Exit();
             return;
         }
-        if (!CanDraw || !viewer.ShouldRender)
+        var canDraw = CanDraw;
+        if (canDraw && graphics.SynchronizeWithVerticalRetrace != viewer.UsesVSync)
+        {
+            var backBuffer = GraphicsDevice.PresentationParameters;
+            graphics.PreferredBackBufferWidth = backBuffer.BackBufferWidth;
+            graphics.PreferredBackBufferHeight = backBuffer.BackBufferHeight;
+            graphics.SynchronizeWithVerticalRetrace = viewer.UsesVSync;
+            graphics.ApplyChanges();
+        }
+        if (!canDraw || !viewer.ShouldRender)
         {
             SuppressDraw();
-            viewer.WaitForUpdate(CanDraw);
+            viewer.WaitForUpdate(canDraw);
         }
         base.Update(gameTime);
     }

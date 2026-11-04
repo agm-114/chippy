@@ -10,6 +10,7 @@ dotnet run -- --renderer=monogame
 dotnet run -- "C:\Models\building.glb"
 dotnet run -- --model-demo
 dotnet run -- --preemptive-ticking
+dotnet run -- --vsync
 dotnet run -- --no-publish-render-data
 ```
 
@@ -75,8 +76,10 @@ frame delta. They sleep for at most 10 ms between idle input polls. In live mode
 also wake for the next tick deadline. `ViewerState.TargetFrameRate` defaults
 to 60 and can be changed in the panel. A late frame renders once in the current
 target interval; missed render targets are skipped. Simulation ticks keep their
-catch-up time. VSync is disabled so presentation does not intentionally wait for
-the display while a simulation tick is due; the driver/GPU can still block.
+catch-up time. In published mode, enable **VSync** in the viewer or pass `--vsync`
+to pace rendering through presentation. The manual FPS target applies when VSync
+is off. Live mode uses the manual target so display refresh waits stay out of
+the shared simulation and render loop.
 
 BRUTAL calls `Update` after polling events; MonoGame suppresses `Draw` until a
 frame is due. Both use the same scheduling code. GPU/window calls and all ImGui calls

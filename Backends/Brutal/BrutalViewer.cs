@@ -48,8 +48,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
             nativeWindow.MakeContextCurrent();
             if (!Glad.Initialize(Glfw.PInvoke.GetProcAddress))
                 throw new InvalidOperationException("Failed to load OpenGL functions.");
-            // Shared pacing must be able to wake for a simulation tick before the next frame.
-            Glfw.SwapInterval(0);
+            Glfw.SwapInterval(state.WantsVSync ? 1 : 0);
             if (!smokeTest)
                 nativeWindow.Visible = true;
             try
@@ -78,6 +77,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
         using var viewer = new ModelViewer(renderer, this, state);
         using var ui = new BrutalViewerUi(window, viewer);
         var frames = 0;
+        var vsync = viewer.UsesVSync;
         window.OnScroll += OnScroll;
 
         try
@@ -91,6 +91,11 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                 var canDraw = size.X > 0 && size.Y > 0;
                 if (!viewer.Update(ui.WantsKeyboard, ui.HasPendingInput, canDraw ? ui.BuildFrame : null, ui.WantsMouse))
                     return false;
+                if (vsync != viewer.UsesVSync)
+                {
+                    vsync = viewer.UsesVSync;
+                    Glfw.SwapInterval(vsync ? 1 : 0);
+                }
                 if (!canDraw || !viewer.ShouldRender)
                 {
                     viewer.WaitForUpdate(canDraw);
