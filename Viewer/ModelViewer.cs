@@ -17,26 +17,23 @@ public class ModelViewer : IDisposable
     private readonly TimeProvider clock;
     private readonly long started;
     private readonly int ownerThread = Environment.CurrentManagedThreadId;
-    private RenderWorld? published;
-    private Task? simulationWork;
+    private PublishedSimulation? published;
     private double previousTime, previousSimulationTime, nextRenderTime, previousRenderTime;
     private Entity? followedEntity;
     private Vector3 previousFollowPosition;
     private (Matrix4x4 View, Vector2 ProjectionScale, Vector3 Eye, float Near, float Far)? drawnCamera;
-    private bool earlyTick, redraw, uiInitialized, worldChanged, disposed;
+    private bool redraw, uiInitialized, disposed;
     private bool middleHeld, dragging, focusHeld;
     private readonly QueryDescription focusQuery = new QueryDescription().WithAll<Transform>();
     public ViewerState State { get; }
     public bool UsesPublishedData => published is not null;
-    public bool SimulationInProgress => simulationWork is { IsCompleted: false };
-    public long? PublishedTick => published?.Tick;
+    public bool SimulationInProgress => published?.IsStepping == true;
+    public long? PublishedTick => published?.Render.Tick;
     public long DisplayedTick { get; private set; }
-    public World RenderWorld => published?.World ?? State.World;
+    public World RenderWorld => published?.Render.World ?? State.World;
     internal int DrawnMeshAssetCount => scene.DrawnMeshAssetCount;
-    public bool HasPreparedTick => HasPreparedWorld && earlyTick;
+    public bool HasPreparedTick => published?.HasPreparedTick == true;
     public bool ShouldRender => redraw || Now >= nextRenderTime;
-    private bool TickEarly => UsesPublishedData && State.PreemptiveTicking;
-    private bool HasPreparedWorld => simulationWork is null && published is { HasPrepared: true };
     private double Now => clock.GetElapsedTime(started).TotalSeconds;
 
     public ModelViewer(IRenderSystem renderSystem, IInputSystem input, ViewerState state, TimeProvider? clock = null)
@@ -47,25 +44,21 @@ public class ModelViewer : IDisposable
         this.clock = clock ?? TimeProvider.System;
         transforms = new(state.World);
         scene = new(renderSystem);
-        UpdatePublication();
         started = this.clock.GetTimestamp();
+        if (state.PublishRenderData) published = new(state, this.clock);
     }
 
     public TimeSpan GetUpdateDelay(bool rendering = true)
     {
         var now = Now;
-        var tickDelay = simulationWork switch
-        {
-            { IsCompleted: true } => 0,
-            not null => 0.001,
-            _ => (HasPreparedTick ? State.Simulation.SecondsUntilPublication : State.Simulation.SecondsUntilNextTick)
-                - (now - previousSimulationTime)
-        };
+        var updateDelay = published is { } background
+            ? background.IsWaitingForUi ? 0.001 : double.PositiveInfinity
+            : State.Simulation.SecondsUntilNextTick - (now - previousSimulationTime);
         var renderDelay = !rendering ? double.PositiveInfinity : redraw ? 0 : nextRenderTime - now;
-        return TimeSpan.FromSeconds(Math.Clamp(Math.Min(tickDelay, renderDelay), 0, 0.01));
+        return TimeSpan.FromSeconds(Math.Clamp(Math.Min(updateDelay, renderDelay), 0, 0.01));
     }
 
-    // UI remains on the window thread, with exclusive live-world access between tick tasks.
+    // UI remains on the window thread, with exclusive live-world access between ticks.
     // The callback returns true for world edits. Native backends queue input without touching the world.
     public bool Update(bool keyboardCaptured = false, bool uiInputPending = false, Func<bool>? updateUi = null, bool mouseCaptured = false)
     {
@@ -75,61 +68,45 @@ public class ModelViewer : IDisposable
         var delta = now - previousTime;
         previousTime = now;
         if (!UpdateCamera(delta, keyboardCaptured, mouseCaptured)) return false;
-        if (SimulationInProgress) return true;
-        var completed = simulationWork is not null;
-        if (simulationWork is { } work)
+        if (published is { } background)
         {
-            simulationWork = null;
-            work.GetAwaiter().GetResult();
+            background.CheckForFailure();
+            var needsUi = updateUi is not null && (!uiInitialized || uiInputPending || ShouldRender);
+            background.SetUiPending(updateUi is not null && (!uiInitialized || uiInputPending));
+            if ((needsUi || !State.PublishRenderData)
+                && background.TryUseWorld(() => needsUi && BuildUi(updateUi!, uiInputPending)))
+            {
+                background.SetUiPending(false);
+                if (!State.PublishRenderData && !background.HasPreparedTick)
+                {
+                    published = null;
+                    background.Dispose();
+                    previousSimulationTime = Now;
+                    return true;
+                }
+            }
+            background.Render.AcquireLatest();
+            return true;
         }
+
         UpdateClock();
         var simulation = State.Simulation;
-        var tickRequested = !HasPreparedWorld && simulation.CanTakeTick(TickEarly);
-        if (updateUi is not null && (!uiInitialized || uiInputPending || completed || ShouldRender || tickRequested))
+        if (updateUi is not null && (!uiInitialized || uiInputPending || ShouldRender || simulation.CanTakeTick()))
         {
-            var changed = updateUi();
-            worldChanged |= changed;
-            uiInitialized = true;
-            redraw |= uiInputPending || changed;
+            BuildUi(updateUi, uiInputPending);
             UpdateClock();
         }
-        UpdatePublication();
-        if (!HasPreparedWorld && simulation.TryTakeTick(TickEarly))
-        {
-            earlyTick = !simulation.ReservedTickIsDue;
-            if (published is { } target)
-                simulationWork = Task.Run(() =>
-                {
-                    simulation.Step();
-                    target.Prepare(simulation.Tick);
-                });
-            else simulation.Step();
-        }
+        if (State.PublishRenderData) published = new(State, clock);
+        else if (simulation.TryTakeTick()) simulation.Step();
         return true;
     }
 
-    private void UpdatePublication()
+    private bool BuildUi(Func<bool> updateUi, bool inputPending)
     {
-        var simulation = State.Simulation;
-        if (earlyTick && !simulation.IsRunning) simulation.CommitEarlyTick();
-        if (published is null && State.PublishRenderData)
-        {
-            published = new(State.World);
-            worldChanged = true;
-        }
-        if (worldChanged) published?.Prepare(simulation.Tick);
-        worldChanged = false;
-        if (published is { HasPrepared: true } ready && (!earlyTick || simulation.ReservedTickIsDue))
-        {
-            ready.Publish();
-            earlyTick = false;
-        }
-        // Finish an already computed tick before returning to direct live-world rendering.
-        if (!State.PublishRenderData && !HasPreparedWorld)
-        {
-            published?.Dispose();
-            published = null;
-        }
+        var changed = updateUi();
+        uiInitialized = true;
+        redraw |= inputPending || changed;
+        return changed;
     }
 
     private void UpdateClock()
@@ -142,20 +119,18 @@ public class ModelViewer : IDisposable
     public bool TryEditWorld(Action<World> edit)
     {
         EnsureOwner();
-        if (simulationWork is not null) return false;
+        if (published is { } background)
+            return background.TryUseWorld(() => { edit(State.World); return redraw = true; });
         edit(State.World);
-        worldChanged = redraw = true;
-        return true;
+        return redraw = true;
     }
 
     public void StepSimulation()
     {
         EnsureOwner();
-        if (simulationWork is not null) throw new InvalidOperationException("Wait for the active tick before stepping.");
-        if (HasPreparedTick) State.Simulation.CommitEarlyTick();
-        else State.Simulation.Step();
-        earlyTick = false;
-        worldChanged = redraw = true;
+        if (published is null) State.Simulation.Step();
+        else if (!published.TryStep()) throw new InvalidOperationException("Wait for the active tick before stepping.");
+        redraw = true;
     }
 
     public void Draw(Vector2 viewportSize)
@@ -280,14 +255,7 @@ public class ModelViewer : IDisposable
     {
         if (disposed) return;
         EnsureOwner();
-        // A backend/world cannot be torn down while a tick is still using it.
-        try { simulationWork?.GetAwaiter().GetResult(); }
-        finally
-        {
-            simulationWork = null;
-            State.Simulation.CommitEarlyTick();
-            disposed = true;
-            published?.Dispose();
-        }
+        disposed = true;
+        published?.Dispose();
     }
 }

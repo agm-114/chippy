@@ -66,10 +66,9 @@ concurrently with a running tick.
 
 `ViewerState.Simulation` lives alongside the world, outside the renderer-switch
 loop, so its systems, time, pause state, and speed survive backend recreation.
-The shared `ModelViewer.Update` measures wall time with a monotonic clock,
-coordinates simulation, and updates the camera with a separately clamped frame delta.
-Both backends wake for the earlier of the next tick and frame deadline, sleeping
-for at most 10 ms between input polls while idle. `ViewerState.TargetFrameRate` defaults
+Both backends use a monotonic clock and update the camera with a separately clamped
+frame delta. They sleep for at most 10 ms between idle input polls. In live mode they
+also wake for the next tick deadline. `ViewerState.TargetFrameRate` defaults
 to 60 and can be changed in the panel. A late frame renders once in the current
 target interval; missed render targets are skipped. Simulation ticks keep their
 catch-up time. VSync is disabled so presentation does not intentionally wait for
@@ -77,20 +76,19 @@ the display while a simulation tick is due; the driver/GPU can still block.
 
 BRUTAL calls `Update` after polling events; MonoGame suppresses `Draw` until a
 frame is due. Both use the same scheduling code. GPU/window calls and all ImGui calls
-stay on the window thread. With publishing enabled, one simulation tick and render-data
-preparation run on a worker task. Drawing reads the latest completed packet while that
-worker mutates the world. The viewer starts at most one tick per input-pump iteration;
-catch-up debt is retained, with an opportunity to process UI and draw between ticks.
+stay on the window thread. With publishing enabled, a dedicated simulation loop wakes
+for its own tick deadlines, runs systems, and publishes render data. Drawing reads the
+latest snapshot while the simulation works on the live world. The render cap controls
+frame deadlines independently of tick deadlines.
 
 ImGui edits the actual Arch world between ticks. Backends collect native input while
 a tick runs, but defer widget code until it finishes. Meanwhile, presentation reuses
-the previous world packet and completed ImGui draw data. Input is handled at the next
-safe pump, before another tick; UI/world edits request an immediate redraw and repeated
-pending requests coalesce. A UI pass and preparation of its edited packet block that
-window thread briefly. Camera controls continue independently. There is no command queue.
+the previous snapshot and completed ImGui draw data. Pending input gets the next safe
+point before another tick. A frame builds its UI first when the world is available, and
+UI edits request an immediate redraw. Camera controls continue during ticks.
 
-`RenderWorld` owns two Arch worlds: the published world being drawn and a world for
-preparing the next publication. Preparation rebuilds a trimmed world containing only
+`RenderWorld` reuses three Arch worlds for drawing, holding the latest publication,
+and preparing the next one. Preparation rebuilds a trimmed world containing only
 renderable `Transform`, `MeshRenderer`/`LineRenderer`/`Light`, and `SourceEntity` components.
 Mesh assets and immutable line positions stay shared. Transform world matrices are resolved before copying; copied parents are
 cleared, and rendering uses those resolved matrices without another transform update.
@@ -104,21 +102,21 @@ snapshot worlds, and disabling publishing releases them after a held tick is dra
 `viewer.UsesPublishedData` reflects the active render-world object; `PublishedTick`
 is null in live mode.
 
-Publication swaps the two worlds on the window thread between draws, after the
-worker finishes. There is no extra acquire step or swap lock. `SceneRenderSystem.Draw(world, viewportSize)`
+The producer and window thread exchange snapshot references under a short lock. The
+window thread acquires the latest snapshot between draws, and rendering uses it without
+holding that lock. `SceneRenderSystem.Draw(world, viewportSize)`
 queries either the published world or the simulation world directly in live mode.
 Treat `viewer.RenderWorld` as read-only and obtain it for each draw; do not retain
 its entities or component references across publications, because the old world
-becomes the next preparation target. The two world objects are reused; incremental
-entity synchronization is not implemented.
+can be reused for a later publication.
 Direct world changes outside registered systems/UI must go through
-`viewer.TryEditWorld(world => ...)`, on the window thread. It returns false while a tick
-task is outstanding; retain/retry the edit. Do not mutate the world or scheduler from
+`viewer.TryEditWorld(world => ...)`, on the window thread. It returns false while the
+simulation owns the world. Retain the edit and retry. Do not mutate the world or scheduler from
 other threads, or retain component references across structural changes.
 
 With **Preemptive ticking**, the worker starts the next tick early and prepares its
 packet, then holds publication until that tick's target. Only one unpublished tick is
-allowed. Late results publish as soon as the main pump observes completion. ImGui can
+allowed. Late results publish as soon as preparation completes. ImGui can
 edit the computed world while its packet is held; preparation is repeated for the
 same deadline. The UI can therefore show a working tick ahead of the displayed tick.
 Pausing, setting speed to zero, or manually stepping commits an already-computed tick;

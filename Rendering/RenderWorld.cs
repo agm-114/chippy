@@ -5,13 +5,16 @@ using Chippy.Systems;
 
 namespace Chippy.Rendering;
 
-// Prepare has exclusive source-world access. Publish runs between draws on the window thread.
+// The producer builds one world while the window thread draws another. The third holds the latest result.
 public class RenderWorld(World source) : IDisposable
 {
     private readonly TransformSystem transforms = new(source);
     private readonly QueryDescription query = new QueryDescription().WithAll<Transform>();
+    private readonly Lock exchange = new();
     private World prepared = World.Create();
+    private World latest = World.Create();
     private long? preparedTick;
+    private long? latestTick;
     public World World { get; private set; } = World.Create();
     public long Tick { get; private set; }
     public bool HasPrepared => preparedTick is not null;
@@ -43,16 +46,37 @@ public class RenderWorld(World source) : IDisposable
 
     public void Publish()
     {
+        PublishLatest();
+        AcquireLatest();
+    }
+
+    internal void PublishLatest()
+    {
         if (preparedTick is not { } tick)
             throw new InvalidOperationException("Prepare the render world before publishing it.");
-        (World, prepared) = (prepared, World);
-        Tick = tick;
+        lock (exchange)
+        {
+            (latest, prepared) = (prepared, latest);
+            latestTick = tick;
+        }
         preparedTick = null;
+    }
+
+    internal void AcquireLatest()
+    {
+        lock (exchange)
+        {
+            if (latestTick is not { } tick) return;
+            (World, latest) = (latest, World);
+            Tick = tick;
+            latestTick = null;
+        }
     }
 
     public void Dispose()
     {
         World.Dispose();
+        latest.Dispose();
         prepared.Dispose();
     }
 }
