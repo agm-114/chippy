@@ -15,8 +15,9 @@ dotnet run -- --no-publish-render-data
 
 The default scene is a solar system at a common scale of 1 world unit = 1,000 km.
 Radii and orbital distances use rounded [NASA fact-sheet values](https://nssdc.gsfc.nasa.gov/planetary/factsheet/).
-The camera starts following Earth, whose triangles are randomly green/blue using a
-fixed seed. The Sun is an unlit mesh with a point light. Orbits remain circular
+The camera starts following Earth, which uses `Mesh.WithContinents` for its green land
+and blue ocean. `Mesh.WithFaceNoise` and `Mesh.WithIslands` are available for other meshes.
+The Sun is an unlit mesh with a point light. Orbits remain circular
 and coplanar, with one simulated second representing one hour; this is not an orbital
 physics solver. The 2D map uses fixed-size markers for visibility.
 `--model-demo` loads two copies of `Assets/Bakery.gltf` under a shared parent.

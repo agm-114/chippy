@@ -17,6 +17,7 @@ public static class SolarSystemDemo
     public static ViewerState Create(World world, RenderBackend backend)
     {
         var sphere = Mesh.CreateIcosphere();
+        var earthMesh = sphere.WithContinents(new(0.05f, 0.3f, 0.85f, 1), new(0.12f, 0.65f, 0.2f, 1));
         const float earthDistance = 149_600, earthRadius = 6.378f;
         world.Create(new Name("Sun"), new Transform { LocalScale = new(695.7f) },
             new MeshRenderer(sphere) { Tint = new(1, 0.85f, 0.55f, 1), Unlit = true },
@@ -42,7 +43,7 @@ public static class SolarSystemDemo
             var pivot = world.Create(new Name($"{planet.Name} orbit"), new Transform(),
                 new OrbitMotion(planet.Distance, phase, Math.Tau / (planet.Days * 24)));
             var body = world.Create(new Name(planet.Name), new Transform { Parent = pivot, LocalScale = new(planet.Radius) },
-                new MeshRenderer(planet.Name == "Earth" ? CreateEarth(sphere) : sphere) { Tint = planet.Color },
+                new MeshRenderer(planet.Name == "Earth" ? earthMesh : sphere) { Tint = planet.Color },
                 new DistantMarker(planet.Name == "Earth" ? new(0.35f, 0.65f, 1, 1) : planet.Color));
             world.Create(new Name($"{planet.Name} path"), new Transform(),
                 LineRenderer.Circle(planet.Distance, new(0.15f, 0.2f, 0.3f, 1), 2048));
@@ -80,20 +81,6 @@ public static class SolarSystemDemo
                 (float)((Math.Sin(Math.Tau * 660 * t) + 0.4 * Math.Sin(Math.Tau * 990 * t))
                     * Math.Exp(-8 * t) * Math.Min(t / 0.01, 1) * Math.Min((0.45 - t) / 0.02, 1) * 0.5))
         };
-    }
-
-    private static Mesh CreateEarth(Mesh sphere)
-    {
-        var surface = sphere.SubMeshes[0];
-        List<uint> land = [], water = [];
-        var random = new Random(42);
-        for (var i = 0; i < surface.Indices.Length; i += 3)
-        {
-            var triangles = random.NextDouble() < 0.3 ? land : water;
-            triangles.AddRange(surface.Indices.AsSpan(i, 3));
-        }
-        return new([new(surface.Vertices, [.. water], new(0.05f, 0.3f, 0.85f, 1)),
-            new(surface.Vertices, [.. land], new(0.12f, 0.65f, 0.2f, 1))]);
     }
 
     private static void DrawOverlay(World world, PrimitiveBatch draw, Vector2 size)
