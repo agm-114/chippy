@@ -54,6 +54,9 @@ public class ViewerPanel : IDisposable
         do
         {
             ImGui.NewFrame();
+            var io = ImGui.GetIO();
+            if (!io.WantCaptureMouse && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                viewer.SelectAt(new(io.MousePos.X, io.MousePos.Y), new(io.DisplaySize.X, io.DisplaySize.Y));
             changed |= Draw();
             ImGui.Render();
             HasDrawData = true;
@@ -113,7 +116,7 @@ public class ViewerPanel : IDisposable
             ImGui.TextWrapped("Middle drag: orbit · Shift + middle drag: pan · Wheel / +/-: zoom"u8);
             ImGui.TextWrapped("WASD: move · Space/Ctrl: up/down · Shift: faster · F: follow selected"u8);
             ImGui.TextWrapped("Arrows: orbit · Esc: close"u8);
-            ImGui.TextWrapped("Click the scene to use camera shortcuts."u8);
+            ImGui.TextWrapped("Left click a mesh to select and center it."u8);
         }
         ImGui.End();
         return changed;
@@ -279,7 +282,6 @@ public class ViewerPanel : IDisposable
             if (ImGui.Button("Stop"u8)) audio.StopMusic();
         }
         if (state.EffectClip is { } chime && ImGui.Button("Play chime"u8)) audio.PlayOneShot(chime);
-        ImGui.TextWrapped("Synthesized in C#; no audio files. Playback continues across renderer switches."u8);
     }
 
     private static bool DragVector3(ReadOnlySpan<byte> label, ref Vector3 value, float speed, float min = 0, float max = 0)

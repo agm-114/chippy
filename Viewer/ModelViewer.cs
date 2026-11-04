@@ -22,6 +22,7 @@ public class ModelViewer : IDisposable
     private double previousTime, previousSimulationTime, nextRenderTime, previousRenderTime;
     private Entity? followedEntity;
     private Vector3 previousFollowPosition;
+    private (Matrix4x4 View, Vector2 ProjectionScale, Vector3 Eye, float Near, float Far)? drawnCamera;
     private bool earlyTick, redraw, uiInitialized, worldChanged, disposed;
     private bool middleHeld, dragging, focusHeld;
     private readonly QueryDescription focusQuery = new QueryDescription().WithAll<Transform>();
@@ -170,7 +171,28 @@ public class ModelViewer : IDisposable
             State.Camera.NearClip, State.Camera.FarClip);
         renderSystem.BeginFrame(view, projection, State.Wireframe);
         scene.Draw(RenderWorld, viewportSize, State.DrawOverlay, State.Camera.Target);
+        drawnCamera = (view, new(projection.M11, projection.M22), State.Camera.Offset, State.Camera.NearClip, State.Camera.FarClip);
         DisplayedTick = PublishedTick ?? State.Simulation.Tick;
+    }
+
+    internal void SelectAt(Vector2 pointer, Vector2 displaySize)
+    {
+        EnsureOwner();
+        if (!input.IsFocused || drawnCamera is not { } frame) return;
+        if (pointer.X < 0 || pointer.Y < 0 || pointer.X >= displaySize.X || pointer.Y >= displaySize.Y) return;
+
+        // ImGui reports logical window coordinates. Normalize before using the framebuffer projection.
+        var normalized = pointer / displaySize;
+        var viewRay = new Vector3((2 * normalized.X - 1) / frame.ProjectionScale.X,
+            (1 - 2 * normalized.Y) / frame.ProjectionScale.Y, -1);
+        var direction = Vector3.TransformNormal(viewRay, Matrix4x4.Transpose(frame.View));
+        if (scene.Pick(frame.Eye, direction, frame.Near, frame.Far) is not { } hit || !State.World.IsAlive(hit.Entity)) return;
+
+        State.SelectedEntity = hit.Entity;
+        State.FollowSelected = true;
+        State.Camera.Target = hit.Position;
+        followedEntity = null;
+        redraw = true;
     }
 
     private bool UpdateCamera(double delta, bool keyboardCaptured, bool mouseCaptured)

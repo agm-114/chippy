@@ -1,7 +1,9 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Arch.Core;
+using Arch.Core.Extensions;
 using Chippy.Components;
+using Chippy.Models;
 
 namespace Chippy.Rendering;
 
@@ -12,6 +14,7 @@ public class SceneRenderSystem(IRenderSystem renderer)
     private readonly QueryDescription lineQuery = new QueryDescription().WithAll<Transform, LineRenderer>();
     private readonly QueryDescription lightQuery = new QueryDescription().WithAll<Transform, Light>();
     private readonly List<(Transform, Light)> lights = [];
+    private readonly List<(Entity Source, Mesh Mesh, Matrix4x4 Matrix, Vector3 Position)> drawnMeshes = [];
     private readonly PrimitiveBatch primitives = new(renderer);
 
     public void Draw(World world, Vector2 viewportSize, Action<World, PrimitiveBatch, Vector2>? drawOverlay = null, Vector3 origin = default)
@@ -24,11 +27,14 @@ public class SceneRenderSystem(IRenderSystem renderer)
             lights.Add((copy, light));
         });
         renderer.SetLights(CollectionsMarshal.AsSpan(lights));
-        world.Query(in meshQuery, (ref Transform transform, ref MeshRenderer meshRenderer) =>
+        drawnMeshes.Clear();
+        world.Query(in meshQuery, (Entity entity, ref Transform transform, ref MeshRenderer meshRenderer) =>
         {
-            if (!meshRenderer.IsRenderable) return;
+            if (!meshRenderer.Enabled || meshRenderer.SharedMesh is not { } mesh) return;
             var copy = RelativeTo(transform, origin);
             renderer.DrawMesh(in copy, in meshRenderer);
+            var source = entity.TryGet<SourceEntity>(out var link) ? link.Entity : entity;
+            drawnMeshes.Add((source, mesh, copy.LocalToWorldMatrix, transform.LocalToWorldMatrix.Translation));
         });
         world.Query(in lineQuery, (ref Transform transform, ref LineRenderer line) =>
         {
@@ -36,6 +42,48 @@ public class SceneRenderSystem(IRenderSystem renderer)
         });
         drawOverlay?.Invoke(world, primitives, viewportSize);
         primitives.Flush(viewportSize, origin);
+    }
+
+    internal (Entity Entity, Vector3 Position)? Pick(Vector3 eye, Vector3 direction, float near, float far)
+    {
+        (Entity, Vector3)? hit = null;
+        foreach (var (entity, mesh, matrix, position) in drawnMeshes)
+        {
+            if (!Matrix4x4.Invert(matrix, out var inverse)) continue;
+            var localEye = Vector3.Transform(eye, inverse);
+            var localDirection = Vector3.TransformNormal(direction, inverse);
+            // Keep the ray parameter in view-depth units after transforming into mesh space.
+            foreach (var part in mesh.SubMeshes)
+                for (var i = 0; i < part.Indices.Length; i += 3)
+                {
+                    var a = part.Vertices[part.Indices[i]].Position;
+                    var b = part.Vertices[part.Indices[i + 1]].Position;
+                    var c = part.Vertices[part.Indices[i + 2]].Position;
+                    var depth = TriangleDepth(localEye, localDirection, a, b, c);
+                    if (depth >= near && depth < far)
+                    {
+                        far = depth;
+                        hit = (entity, position);
+                    }
+                }
+        }
+        return hit;
+    }
+
+    private static float TriangleDepth(Vector3 eye, Vector3 direction, Vector3 a, Vector3 b, Vector3 c)
+    {
+        var ab = b - a;
+        var ac = c - a;
+        var p = Vector3.Cross(direction, ac);
+        var determinant = Vector3.Dot(ab, p);
+        if (determinant == 0) return float.NaN;
+
+        var offset = eye - a;
+        var u = Vector3.Dot(offset, p) / determinant;
+        if (u < 0 || u > 1) return float.NaN;
+        var q = Vector3.Cross(offset, ab);
+        var v = Vector3.Dot(direction, q) / determinant;
+        return v < 0 || u + v > 1 ? float.NaN : Vector3.Dot(ac, q) / determinant;
     }
 
     private static Transform RelativeTo(Transform transform, Vector3 origin)
