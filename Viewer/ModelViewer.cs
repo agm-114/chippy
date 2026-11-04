@@ -19,11 +19,12 @@ public class ModelViewer : IDisposable
     private readonly int ownerThread = Environment.CurrentManagedThreadId;
     private PublishedSimulation? published;
     private double previousTime, previousSimulationTime, nextRenderTime, previousRenderTime;
-    private double? lastUiUpdate;
     private Entity? followedEntity;
     private Vector3 previousFollowPosition;
     private (Matrix4x4 View, Vector2 ProjectionScale, Vector3 Eye, float Near, float Far)? drawnCamera;
     private bool redraw, disposed;
+    private bool uiRefreshPending = true;
+    private bool uiAvailable;
     private bool middleHeld, dragging, focusHeld;
     private readonly QueryDescription focusQuery = new QueryDescription().WithAll<Transform>();
     public ViewerState State { get; }
@@ -69,16 +70,14 @@ public class ModelViewer : IDisposable
         var delta = now - previousTime;
         previousTime = now;
         if (!UpdateCamera(delta, keyboardCaptured, mouseCaptured)) return false;
+        uiAvailable = updateUi is not null;
         if (published is { } background)
         {
             background.CheckForFailure();
-            // Keep the tick-rate display updating even if catch-up ticks are running back to back.
-            var uiRefreshDue = lastUiUpdate is not { } lastUpdate || now - lastUpdate >= 1;
-            var uiPending = updateUi is not null && (uiInputPending || uiRefreshDue);
-            var needsUi = updateUi is not null && (uiPending || ShouldRender);
+            var uiPending = uiAvailable && (uiInputPending || uiRefreshPending);
             background.SetUiPending(uiPending);
-            if ((needsUi || !State.PublishRenderData)
-                && background.TryUseWorld(() => needsUi && BuildUi(updateUi!, uiInputPending)))
+            if ((uiPending || !State.PublishRenderData)
+                && background.TryUseWorld(() => uiPending && BuildUi(updateUi!, uiInputPending)))
             {
                 background.SetUiPending(false);
                 if (!State.PublishRenderData && !background.HasPreparedTick)
@@ -95,7 +94,7 @@ public class ModelViewer : IDisposable
 
         UpdateClock();
         var simulation = State.Simulation;
-        if (updateUi is not null && (lastUiUpdate is null || uiInputPending || ShouldRender || simulation.CanTakeTick()))
+        if (updateUi is not null && (uiRefreshPending || uiInputPending || ShouldRender || simulation.CanTakeTick()))
         {
             BuildUi(updateUi, uiInputPending);
             UpdateClock();
@@ -108,7 +107,7 @@ public class ModelViewer : IDisposable
     private bool BuildUi(Func<bool> updateUi, bool inputPending)
     {
         var changed = updateUi();
-        lastUiUpdate = Now;
+        uiRefreshPending = false;
         redraw |= inputPending || changed;
         return changed;
     }
@@ -157,6 +156,11 @@ public class ModelViewer : IDisposable
         scene.Draw(RenderWorld, viewportSize, State.DrawOverlay, camera.Target, (view, projection.M22));
         drawnCamera = (view, new(projection.M11, projection.M22), eye, near, far);
         DisplayedTick = PublishedTick ?? State.Simulation.Tick;
+        if (published is { } background)
+        {
+            uiRefreshPending = true;
+            if (uiAvailable) background.SetUiPending(true);
+        }
     }
 
     internal void SelectAt(Vector2 pointer, Vector2 displaySize)

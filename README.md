@@ -83,9 +83,10 @@ frame deadlines independently of tick deadlines.
 
 ImGui edits the actual Arch world between ticks. Backends collect native input while
 a tick runs, but defer widget code until it finishes. Meanwhile, presentation reuses
-the previous snapshot and completed ImGui draw data. Pending input gets the next safe
-point before another tick. A frame builds its UI first when the world is available, and
-UI edits request an immediate redraw. Camera controls continue during ticks.
+the previous snapshot and completed ImGui draw data. Each drawn frame requests a UI
+refresh. Frame requests and pending input share the next safe point before another
+tick, and several requests can share one UI pass. UI edits request an immediate
+redraw. Camera controls continue during ticks.
 
 `RenderWorld` reuses three Arch worlds for drawing, holding the latest publication,
 and preparing the next one. Preparation rebuilds a trimmed world containing only
