@@ -19,10 +19,11 @@ public class ModelViewer : IDisposable
     private readonly int ownerThread = Environment.CurrentManagedThreadId;
     private PublishedSimulation? published;
     private double previousTime, previousSimulationTime, nextRenderTime, previousRenderTime;
+    private double? lastUiUpdate;
     private Entity? followedEntity;
     private Vector3 previousFollowPosition;
     private (Matrix4x4 View, Vector2 ProjectionScale, Vector3 Eye, float Near, float Far)? drawnCamera;
-    private bool redraw, uiInitialized, disposed;
+    private bool redraw, disposed;
     private bool middleHeld, dragging, focusHeld;
     private readonly QueryDescription focusQuery = new QueryDescription().WithAll<Transform>();
     public ViewerState State { get; }
@@ -71,8 +72,11 @@ public class ModelViewer : IDisposable
         if (published is { } background)
         {
             background.CheckForFailure();
-            var needsUi = updateUi is not null && (!uiInitialized || uiInputPending || ShouldRender);
-            background.SetUiPending(updateUi is not null && (!uiInitialized || uiInputPending));
+            // Keep the tick-rate display updating even if catch-up ticks are running back to back.
+            var uiRefreshDue = lastUiUpdate is not { } lastUpdate || now - lastUpdate >= 1;
+            var uiPending = updateUi is not null && (uiInputPending || uiRefreshDue);
+            var needsUi = updateUi is not null && (uiPending || ShouldRender);
+            background.SetUiPending(uiPending);
             if ((needsUi || !State.PublishRenderData)
                 && background.TryUseWorld(() => needsUi && BuildUi(updateUi!, uiInputPending)))
             {
@@ -91,7 +95,7 @@ public class ModelViewer : IDisposable
 
         UpdateClock();
         var simulation = State.Simulation;
-        if (updateUi is not null && (!uiInitialized || uiInputPending || ShouldRender || simulation.CanTakeTick()))
+        if (updateUi is not null && (lastUiUpdate is null || uiInputPending || ShouldRender || simulation.CanTakeTick()))
         {
             BuildUi(updateUi, uiInputPending);
             UpdateClock();
@@ -104,7 +108,7 @@ public class ModelViewer : IDisposable
     private bool BuildUi(Func<bool> updateUi, bool inputPending)
     {
         var changed = updateUi();
-        uiInitialized = true;
+        lastUiUpdate = Now;
         redraw |= inputPending || changed;
         return changed;
     }

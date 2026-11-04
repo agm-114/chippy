@@ -8,7 +8,7 @@ namespace Chippy.Viewer;
 
 public class ViewerPanel : IDisposable
 {
-    private static readonly double[] SpeedMultipliers = [0.25, 0.5, 1, 2, 5, 10];
+    private static readonly double[] SpeedMultipliers = [0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000];
     private readonly ImGuiContextPtr context;
     private readonly ViewerState state;
     private readonly ModelViewer viewer;
@@ -161,7 +161,7 @@ public class ViewerPanel : IDisposable
         var display = ImGui.GetIO().DisplaySize;
         const float width = 300;
         var simulation = state.Simulation;
-        if (state.TimeControlsWindow.Begin("Time Controls"u8, new(Math.Max(12, (display.X - width) / 2), 12), new(width, 150)))
+        if (state.TimeControlsWindow.Begin("Time Controls"u8, new(Math.Max(12, (display.X - width) / 2), 12), new(width, 215)))
         {
             ImGui.BeginDisabled(simulation.IsRunning);
             if (ImGui.Button("Play"u8))
@@ -179,18 +179,29 @@ public class ViewerPanel : IDisposable
             if (ImGui.Button("Step"u8)) viewer.StepSimulation();
             ImGui.EndDisabled();
 
-            if (ImGui.BeginCombo("Speed"u8, $"{simulation.Speed:0.##}×"))
-            {
-                foreach (var multiplier in SpeedMultipliers)
-                    if (ImGui.Selectable($"{multiplier:0.##}×", simulation.Speed == multiplier))
-                        simulation.Speed = multiplier;
-                ImGui.EndCombo();
-            }
+            DrawSpeedButtons(simulation);
             SampleTickRate(simulation);
             ImGui.Text($"Tick rate  {achievedTickRate:0.#} / {simulation.TargetTickRate:0.#} Hz");
             ImGui.Text($"Tick {simulation.Tick:N0} · {simulation.ElapsedTime:F1} sim seconds");
         }
         ImGui.End();
+    }
+
+    private static void DrawSpeedButtons(SimulationScheduler simulation)
+    {
+        const float buttonWidth = 58;
+        var spacing = ImGui.GetStyle().ItemSpacing.X;
+        var columns = Math.Max(1, (int)((ImGui.GetContentRegionAvail().X + spacing) / (buttonWidth + spacing)));
+        var selectedColor = ImGui.GetStyleColorVec4(ImGuiCol.ButtonActive);
+        for (var index = 0; index < SpeedMultipliers.Length; index++)
+        {
+            if (index % columns != 0) ImGui.SameLine();
+            var multiplier = SpeedMultipliers[index];
+            var selected = simulation.Speed == multiplier;
+            if (selected) ImGui.PushStyleColor(ImGuiCol.Button, selectedColor);
+            if (ImGui.Button($"{multiplier:0.##}×", new float2(buttonWidth, 0))) simulation.Speed = multiplier;
+            if (selected) ImGui.PopStyleColor();
+        }
     }
 
     private void SampleTickRate(SimulationScheduler simulation)
