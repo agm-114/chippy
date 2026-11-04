@@ -6,6 +6,8 @@ namespace Chippy.Components;
 public record struct Transform
 {
     public Entity? Parent;
+    // Follow the parent's world position and rotation without inheriting its scale.
+    public bool IgnoreParentScale;
     public Vector3 LocalPosition;
     public Quaternion LocalRotation = Quaternion.Identity;
     public Vector3 LocalScale = Vector3.One;

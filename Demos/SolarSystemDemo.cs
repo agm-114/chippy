@@ -19,7 +19,7 @@ public static class SolarSystemDemo
         var sphere = Mesh.CreateIcosphere();
         var earthMesh = sphere.WithBroadClusters(new(0.05f, 0.3f, 0.85f, 1), new(0.12f, 0.65f, 0.2f, 1));
         const float earthDistance = 149_600, earthRadius = 6.378f;
-        world.Create(new Name("Sun"), new Transform { LocalScale = new(695.7f) },
+        var sun = world.Create(new Name("Sun"), new Transform { LocalScale = new(695.7f) },
             new MeshRenderer(sphere) { Tint = new(1, 0.85f, 0.55f, 1), Unlit = true },
             new DistantMarker(new(1, 0.85f, 0.55f, 1)),
             new Light { Intensity = earthDistance * earthDistance, Color = new(1, 0.97f, 0.9f) });
@@ -40,12 +40,12 @@ public static class SolarSystemDemo
         {
             var planet = planets[i];
             var phase = i * 0.85;
-            var pivot = world.Create(new Name($"{planet.Name} orbit"), new Transform(),
+            var pivot = world.Create(new Name($"{planet.Name} orbit"), new Transform { Parent = sun, IgnoreParentScale = true },
                 new OrbitMotion(planet.Distance, phase, Math.Tau / (planet.Days * 24)));
             var body = world.Create(new Name(planet.Name), new Transform { Parent = pivot, LocalScale = new(planet.Radius) },
                 new MeshRenderer(planet.Name == "Earth" ? earthMesh : sphere) { Tint = planet.Color },
                 new DistantMarker(planet.Name == "Earth" ? new(0.35f, 0.65f, 1, 1) : planet.Color));
-            world.Create(new Name($"{planet.Name} path"), new Transform(),
+            world.Create(new Name($"{planet.Name} path"), new Transform { Parent = sun, IgnoreParentScale = true },
                 LineRenderer.Circle(planet.Distance, new(0.15f, 0.2f, 0.3f, 1), 2048));
             if (planet.Name == "Earth")
             {
