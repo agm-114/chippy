@@ -143,6 +143,7 @@ interfaces. CPU mesh assets remain shared C# objects.
 | --- | --- |
 | `Transform` | Parent entity, local position, quaternion rotation, scale, and the resolved world matrix. Can ignore parent scale. |
 | `OrbitMotion` | Circular orbit radius, phase, and angular speed. `OrbitSystem` updates the entity's local position. |
+| `OrbitPath` | Positions a line relative to its center entity's world position and rotation, independent of its hierarchy parent. |
 | `MeshRenderer` | A shared CPU mesh reference, tint, `Enabled` and `Unlit` state. |
 | `LineRenderer` | Immutable points, color, loop and enabled state. Set `UseWorldSpace` to interpret points as world coordinates. |
 | `Light` | Point/directional light color, intensity, optional range and enabled state. |

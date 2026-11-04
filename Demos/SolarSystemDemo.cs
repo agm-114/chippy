@@ -46,7 +46,7 @@ public static class SolarSystemDemo
                 new MeshRenderer(planet.Name == "Earth" ? earthMesh : sphere) { Tint = planet.Color },
                 new DistantMarker(planet.Name == "Earth" ? new(0.35f, 0.65f, 1, 1) : planet.Color));
             world.Create(new Name($"{planet.Name} path"), new Transform { Parent = body },
-                LineRenderer.Circle(orbit.Radius, new(0.15f, 0.2f, 0.3f, 1), 2048) with { UseWorldSpace = true });
+                new OrbitPath(sun), LineRenderer.Circle(orbit.Radius, new(0.15f, 0.2f, 0.3f, 1), 2048));
             if (planet.Name == "Earth")
             {
                 earth = body;
@@ -55,9 +55,8 @@ public static class SolarSystemDemo
                     { Parent = earth, IgnoreParentScale = true, LocalPosition = lunarOrbit.LocalPosition, LocalScale = new(1.7375f) },
                     lunarOrbit,
                     new MeshRenderer(sphere) { Tint = new(0.75f, 0.75f, 0.8f, 1) }, new DistantMarker(new(0.75f, 0.75f, 0.8f, 1)));
-                world.Create(new Name("Moon path"), new Transform
-                    { Parent = moon, IgnoreParentScale = true, LocalPosition = -lunarOrbit.LocalPosition },
-                    new OrbitPath(), LineRenderer.Circle(lunarOrbit.Radius, new(0.3f, 0.3f, 0.4f, 1), 256));
+                world.Create(new Name("Moon path"), new Transform { Parent = moon },
+                    new OrbitPath(earth), LineRenderer.Circle(lunarOrbit.Radius, new(0.3f, 0.3f, 0.4f, 1), 256));
             }
             if (planet.Name == "Saturn")
                 world.Create(new Name("Saturn rings"), new Transform

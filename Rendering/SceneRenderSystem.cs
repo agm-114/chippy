@@ -64,7 +64,7 @@ public class SceneRenderSystem(IRenderSystem renderer)
         world.Query(in lineQuery, (ref Transform transform, ref LineRenderer line) =>
         {
             if (!line.IsRenderable) return;
-            var matrix = line.UseWorldSpace ? Matrix4x4.Identity : transform.LocalToWorldMatrix;
+            var matrix = line.UseWorldSpace ? Matrix4x4.Identity : line.PointSpaceMatrix ?? transform.LocalToWorldMatrix;
             primitives.DrawPolyline(line.Positions.AsSpan(), matrix, line.Color, line.Loop);
         });
         drawOverlay?.Invoke(world, primitives, viewportSize);

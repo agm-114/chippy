@@ -1,5 +1,6 @@
 using System.Numerics;
 using Arch.Core;
+using Arch.Core.Extensions;
 using Chippy.Components;
 
 namespace Chippy.Systems;
@@ -7,6 +8,7 @@ namespace Chippy.Systems;
 public class TransformSystem(World world)
 {
     private readonly QueryDescription query = new QueryDescription().WithAll<Transform>();
+    private readonly QueryDescription lineQuery = new QueryDescription().WithAll<Transform, LineRenderer>();
     private readonly Dictionary<Entity, (Matrix4x4 Matrix, Quaternion Rotation)> frames = [];
     private readonly HashSet<Entity> ancestors = [];
     private readonly List<Entity> path = [];
@@ -17,6 +19,11 @@ public class TransformSystem(World world)
         frames.Clear();
         world.Query(in query, (Entity entity, ref Transform transform) =>
             transform.LocalToWorldMatrix = Resolve(entity));
+        world.Query(in lineQuery, (Entity entity, ref Transform transform, ref LineRenderer line) =>
+        {
+            line.PointSpaceMatrix = entity.TryGet<OrbitPath>(out var path) && frames.TryGetValue(path.Center, out var center)
+                ? transform.LocalMatrix * WithoutScale(center) : null;
+        });
     }
 
     private Matrix4x4 Resolve(Entity entity)
@@ -54,17 +61,18 @@ public class TransformSystem(World world)
         for (var index = path.Count - 1; index >= 0; index--)
         {
             ref var transform = ref world.Get<Transform>(path[index]);
-            var parentMatrix = frame.Matrix;
-            if (transform.IgnoreParentScale)
-            {
-                // Compose rotations separately so nonuniform scale or shear cannot skew this attachment.
-                parentMatrix = Matrix4x4.CreateFromQuaternion(frame.Rotation);
-                parentMatrix.Translation = frame.Matrix.Translation;
-            }
+            var parentMatrix = transform.IgnoreParentScale ? WithoutScale(frame) : frame.Matrix;
             frame = (transform.LocalMatrix * parentMatrix, Quaternion.Concatenate(transform.LocalRotation, frame.Rotation));
             transform.LocalToWorldMatrix = frame.Matrix;
             frames[path[index]] = frame;
         }
         return frame.Matrix;
+    }
+
+    private static Matrix4x4 WithoutScale((Matrix4x4 Matrix, Quaternion Rotation) frame)
+    {
+        var matrix = Matrix4x4.CreateFromQuaternion(frame.Rotation);
+        matrix.Translation = frame.Matrix.Translation;
+        return matrix;
     }
 }

@@ -9,6 +9,7 @@ public record struct LineRenderer(ImmutableArray<Vector3> Positions)
     public bool Loop;
     public bool UseWorldSpace;
     public bool Enabled = true;
+    internal Matrix4x4? PointSpaceMatrix;
     public readonly bool IsRenderable => Enabled && !Positions.IsDefaultOrEmpty && Positions.Length >= 2;
 
     public static LineRenderer Circle(float radius, Vector4 color, int segments = 128)
