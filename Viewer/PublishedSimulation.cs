@@ -21,7 +21,7 @@ internal class PublishedSimulation : IDisposable
     {
         this.state = state;
         this.clock = clock;
-        Render = new(state.World);
+        Render = new(state.World) { Timeline = state.Timeline };
         try
         {
             Render.Prepare(state.Simulation.Tick);

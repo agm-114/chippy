@@ -93,7 +93,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                     return false;
                 if (!canDraw || !viewer.ShouldRender)
                 {
-                    Thread.Sleep(viewer.GetUpdateDelay(rendering: canDraw));
+                    viewer.WaitForUpdate(canDraw);
                     continue;
                 }
 
@@ -105,7 +105,9 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                 var checkFrame = smokeTest && ++frames == 3;
                 if (checkFrame)
                     CheckFrame(size.X, size.Y);
-                var uiVertices = ui.Render();
+                int uiVertices;
+                using (state.Timeline?.Measure("ui-submit", viewer.DisplayedTick))
+                    uiVertices = ui.Render();
                 if (checkFrame)
                 {
                     if (uiVertices == 0 || GetError() != GL_NO_ERROR)
@@ -114,7 +116,8 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                     RenderChecks.CheckMeshSharing(renderer, viewer);
                     return state.Renderer != RenderBackend.Brutal;
                 }
-                window.SwapBuffers();
+                using (state.Timeline?.Measure("present", viewer.DisplayedTick))
+                    window.SwapBuffers();
                 if (!window.ShouldClose && state.Renderer != RenderBackend.Brutal)
                     return true;
             }

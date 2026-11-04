@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using Arch.Core;
 using Chippy.Audio;
@@ -5,6 +6,7 @@ using Chippy.Backends.Brutal;
 using Chippy.Backends.MonoGame;
 using Chippy.Components;
 using Chippy.Demos;
+using Chippy.Diagnostics;
 using Chippy.Models;
 using Chippy.Viewer;
 
@@ -17,6 +19,38 @@ try
     var smokeTest = args.Contains("--smoke-test");
     var publish = !args.Contains("--no-publish-render-data");
     var preemptive = args.Contains("--preemptive-ticking");
+    var timelinePath = args.FirstOrDefault(arg => arg.StartsWith("--timeline="))?["--timeline=".Length..];
+    var timelineDuration = args.FirstOrDefault(arg => arg.StartsWith("--timeline-seconds="))?["--timeline-seconds=".Length..];
+    var speedArgument = args.FirstOrDefault(arg => arg.StartsWith("--speed="))?["--speed=".Length..];
+    var tickDurationArgument = args.FirstOrDefault(arg => arg.StartsWith("--tick-ms="))?["--tick-ms=".Length..];
+    var frameRateArgument = args.FirstOrDefault(arg => arg.StartsWith("--fps="))?["--fps=".Length..];
+    var frameRate = 60;
+    if (frameRateArgument is not null && (!int.TryParse(frameRateArgument, CultureInfo.InvariantCulture, out frameRate)
+        || frameRate is < 15 or > ViewerState.MaxFrameRate))
+        throw new ArgumentException($"Use --fps with a frame target from 15 through {ViewerState.MaxFrameRate}.");
+    var tickMilliseconds = 0.0;
+    if (tickDurationArgument is not null && (!double.TryParse(tickDurationArgument, CultureInfo.InvariantCulture, out tickMilliseconds)
+        || !double.IsFinite(tickMilliseconds) || tickMilliseconds is < 0 or > 100))
+        throw new ArgumentException("Use --tick-ms with a minimum duration from 0 through 100 ms.");
+    double? initialSpeed = null;
+    if (speedArgument is not null)
+    {
+        if (!double.TryParse(speedArgument, CultureInfo.InvariantCulture, out var speed)
+            || !double.IsFinite(speed) || speed < 0 || speed > ViewerState.MaxSpeedMultiplier)
+            throw new ArgumentException($"Use --speed with a multiplier from 0 through {ViewerState.MaxSpeedMultiplier}.");
+        initialSpeed = speed;
+    }
+    double? timelineSeconds = null;
+    if (timelineDuration is not null)
+    {
+        if (string.IsNullOrWhiteSpace(timelinePath)
+            || !double.TryParse(timelineDuration, CultureInfo.InvariantCulture, out var seconds)
+            || !double.IsFinite(seconds) || seconds <= 0)
+            throw new ArgumentException("Use --timeline-seconds with --timeline=<file> and a positive duration.");
+        timelineSeconds = seconds;
+    }
+    if (timelinePath is not null && string.IsNullOrWhiteSpace(timelinePath))
+        throw new ArgumentException("Use --timeline=<file> to record a timeline.");
     if (preemptive && !publish)
         throw new ArgumentException("Preemptive ticking requires render data publishing.");
     using var world = World.Create();
@@ -56,6 +90,14 @@ try
     state.Audio = audio;
     state.PublishRenderData = publish;
     state.PreemptiveTicking = preemptive;
+    state.TargetFrameRate = frameRate;
+    if (initialSpeed is { } multiplier) state.Simulation.Speed = multiplier;
+    state.Simulation.MinimumTickMilliseconds = tickMilliseconds;
+    state.ShowProfiler = args.Contains("--profiler");
+    using var timeline = new TimelineCapture(timelinePath, timelineSeconds);
+    timeline.SetLive(state.ShowProfiler);
+    state.Timeline = timeline;
+    state.Simulation.Timeline = timeline;
     if (!audio.IsAvailable) Console.WriteLine($"Audio unavailable: {audio.Error}");
     while (true)
     {

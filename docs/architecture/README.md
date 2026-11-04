@@ -1,5 +1,42 @@
 # Simulation and rendering timeline
 
+Enable **Profiler** in the viewer’s Simulation controls to see recent tick, snapshot,
+ImGui, and scene timings in the app. Hover a mark for its duration and IDs, or freeze
+the history while investigating a spike. **Min tick (ms)** fills short ticks with
+synthetic CPU work. Systems still receive their usual simulated time step.
+
+```powershell
+dotnet run -- --profiler --speed=10 --fps=240 --tick-ms=4
+```
+
+Targets extend to 10,000× simulation speed and 500 FPS. The profiler reports the
+rates the app reaches under the selected workload.
+
+Open [runtime-timeline.html](runtime-timeline.html) to inspect measured Chippy
+runs. The viewer includes recorded examples for live, published, preemptive,
+and 1000× published playback. To capture your own run from the repository root:
+
+```powershell
+dotnet run -- --timeline=bin/my-timeline.json --timeline-seconds=5
+dotnet run -- --timeline=bin/fast-timeline.json --timeline-seconds=1 --speed=1000
+```
+
+Open the resulting JSON with **Open capture**. Omit `--timeline-seconds` to save
+the capture when you close the app. The overview pans the visible range and the
+zoom buttons let you inspect individual events. Select a frame to find the
+snapshot and ImGui build it used. The metrics describe the visible range.
+
+The scene frame span measures CPU work in `ModelViewer.Draw`. ImGui submission,
+the backend's present call, and window pacing sleep have their own lanes. Present
+measures how long the call takes to return. The pacing tooltip shows the requested
+sleep alongside elapsed time. Targets show the deadlines Chippy recorded while
+scheduling work. Captures retain up to 160,000 events and report
+any omissions. Short captures work best at high speed. The example traces are
+excerpts, and their timestamps are relative to the start of each excerpt. Recording
+adds CPU work, especially when capturing thousands of ticks per second.
+
+## Illustrative timeline
+
 Open [sim-render-timeline.html](sim-render-timeline.html) directly in a browser.
 It is a standalone interactive diagram; no server or package installation is needed.
 
@@ -87,19 +124,14 @@ tick immediately and holds its packet until the first interval expires.
 
 The C# runtime implements publishing and preemptive ticking through
 `ViewerState.PublishRenderData` (default on) and `ViewerState.PreemptiveTicking`
-(default off). Both backends use `ModelViewer` for orchestration. `RenderWorld` owns
-two Arch worlds: a published world and a preparation world. Preparation copies only
-renderable transforms/mesh renderers and a `SourceEntity` reference to the original
-entity. Publication swaps worlds on the window thread between draws, after the worker
-finishes. The renderer queries the supplied world in both published and live mode.
-GPU/window and ImGui calls stay on the native window
-thread; a worker task computes each simulation tick and prepares render data with
-exclusive access to the same Arch world. The diagram's separate rendering lane
-represents this concurrency; its world/ImGui lane represents exclusive world access,
-rather than a requirement that ImGui and systems use the same OS thread. While the
-worker is active, the window thread polls native input and draws completed world/UI
-data, then builds ImGui at the next safe boundary before starting another tick.
-Live mode performs all work on the window thread.
+(default off). Both backends use `ModelViewer` for orchestration. `RenderWorld`
+rotates three Arch worlds for preparation, publication, and drawing. Preparation
+copies renderable components and a `SourceEntity` reference to the original entity.
+In published mode, a dedicated simulation loop starts ticks and publishes snapshots.
+The window thread acquires the latest snapshot between draws. GPU/window and ImGui
+calls stay on the native window thread. Each rendered frame requests an ImGui refresh,
+which shares the next safe point with pending input before another tick starts. Live
+mode performs all work on the window thread.
 
 The runtime permits one held early packet; UI edits prepare a replacement for its
 existing deadline. Turning publishing off drains a held tick before live rendering.

@@ -8,13 +8,15 @@ namespace Chippy.Viewer;
 
 public class ViewerPanel : IDisposable
 {
-    private static readonly double[] SpeedMultipliers = [0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000];
+    private static readonly double[] SpeedMultipliers =
+        [0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, ViewerState.MaxSpeedMultiplier];
     private readonly ImGuiContextPtr context;
     private readonly ViewerState state;
     private readonly ModelViewer viewer;
     private readonly Stopwatch timer = Stopwatch.StartNew();
     private readonly EntityHierarchy hierarchy;
     private readonly EntityInspector inspector;
+    private readonly ProfilerPanel profiler;
     private long tickSampleStart = Stopwatch.GetTimestamp();
     private long tickSampleCount;
     private double sampledTargetRate, achievedTickRate;
@@ -31,6 +33,7 @@ public class ViewerPanel : IDisposable
         this.viewer = viewer;
         hierarchy = new(state);
         inspector = new(state, hierarchy);
+        profiler = new(state);
         context = ImGui.CreateContext();
         var io = ImGui.GetIO();
         io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
@@ -58,6 +61,7 @@ public class ViewerPanel : IDisposable
                 viewer.SelectAt(new(io.MousePos.X, io.MousePos.Y), new(io.DisplaySize.X, io.DisplaySize.Y));
             DrawViewerControls();
             DrawTimeControls();
+            profiler.Draw();
             hierarchy.Draw();
             changed |= inspector.Draw();
             ImGui.Render();
@@ -129,7 +133,7 @@ public class ViewerPanel : IDisposable
     private void DrawRendererControls()
     {
         var targetFrameRate = state.TargetFrameRate;
-        if (ImGui.SliderInt("Target FPS"u8, ref targetFrameRate, 15, 144))
+        if (ImGui.SliderInt("Target FPS"u8, ref targetFrameRate, 15, ViewerState.MaxFrameRate))
             state.TargetFrameRate = targetFrameRate;
         var preview = state.Renderer == RenderBackend.Brutal ? "BRUTAL"u8 : "MonoGame"u8;
         if (!ImGui.BeginCombo("Renderer"u8, preview))
@@ -152,6 +156,7 @@ public class ViewerPanel : IDisposable
         ImGui.BeginDisabled(!state.PublishRenderData);
         ImGui.Checkbox("Preemptive ticking"u8, ref state.PreemptiveTicking);
         ImGui.EndDisabled();
+        if (state.Timeline is not null) ImGui.Checkbox("Profiler"u8, ref state.ShowProfiler);
         if (viewer.UsesPublishedData)
             ImGui.TextWrapped($"Displayed {viewer.DisplayedTick:N0} · working {state.Simulation.Tick:N0}");
     }
@@ -161,7 +166,7 @@ public class ViewerPanel : IDisposable
         var display = ImGui.GetIO().DisplaySize;
         const float width = 300;
         var simulation = state.Simulation;
-        if (state.TimeControlsWindow.Begin("Time Controls"u8, new(Math.Max(12, (display.X - width) / 2), 12), new(width, 230)))
+        if (state.TimeControlsWindow.Begin("Time Controls"u8, new(Math.Max(12, (display.X - width) / 2), 12), new(width, 255)))
         {
             ImGui.BeginDisabled(simulation.IsRunning);
             if (ImGui.Button("Play"u8))

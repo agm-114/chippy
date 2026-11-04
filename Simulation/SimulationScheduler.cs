@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using Chippy.Diagnostics;
+
 namespace Chippy.Simulation;
 
 // Exclusive world access: do not overlap stepping with UI/world reads or schedule changes.
@@ -13,7 +16,18 @@ public class SimulationScheduler
     public int MaxTicksPerFrame { get; }
     public double TickDuration => 1.0 / TicksPerSecond;
     public long Tick { get; private set; }
+    internal TimelineCapture? Timeline { get; set; }
     public double ElapsedTime => Tick * TickDuration;
+    public double MinimumTickMilliseconds
+    {
+        get;
+        set
+        {
+            if (!double.IsFinite(value) || value is < 0 or > 100)
+                throw new ArgumentOutOfRangeException(nameof(value), "Tick duration must be from 0 through 100 ms.");
+            field = value;
+        }
+    }
     public bool Paused { get; set; }
     public bool IsRunning => !Paused && Speed > 0;
     public double SecondsUntilNextTick => !IsRunning ? double.PositiveInfinity
@@ -82,6 +96,7 @@ public class SimulationScheduler
         if (!CanTakeTick(early)) return false;
         pendingTicks -= 1;
         if (Math.Abs(pendingTicks) < 1e-9) pendingTicks = 0;
+        Timeline?.MarkTarget("tick-target", -pendingTicks / TargetTickRate, Tick + 1);
         return true;
     }
 
@@ -92,6 +107,9 @@ public class SimulationScheduler
     public void Step()
     {
         EnsureIdle();
+        using var span = Timeline?.Measure("tick", Tick + 1);
+        var minimum = MinimumTickMilliseconds;
+        var started = minimum > 0 ? Stopwatch.GetTimestamp() : 0;
         stepping = true;
         try
         {
@@ -99,6 +117,10 @@ public class SimulationScheduler
             foreach (var (system, every) in systems)
                 if (Tick % every == 0)
                     system.Update(TickDuration * every);
+            // Fill the remainder with CPU work to model a heavier tick on the same core.
+            if (minimum > 0)
+                while (Stopwatch.GetElapsedTime(started).TotalMilliseconds < minimum)
+                    Thread.SpinWait(32);
         }
         finally
         {

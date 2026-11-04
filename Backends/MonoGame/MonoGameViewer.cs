@@ -85,7 +85,7 @@ public class MonoGameViewer : Game, IInputSystem
         if (!CanDraw || !viewer.ShouldRender)
         {
             SuppressDraw();
-            Thread.Sleep(viewer.GetUpdateDelay(rendering: CanDraw));
+            viewer.WaitForUpdate(CanDraw);
         }
         base.Update(gameTime);
     }
@@ -106,7 +106,9 @@ public class MonoGameViewer : Game, IInputSystem
             modelPixels = ReadFrame();
             RenderChecks.CheckModelPixels(MemoryMarshal.AsBytes(modelPixels.AsSpan()));
         }
-        var uiVertices = ui!.Render();
+        int uiVertices;
+        using (state.Timeline?.Measure("ui-submit", viewer.DisplayedTick))
+            uiVertices = ui!.Render();
         if (checkFrame)
         {
             var pixels = ReadFrame();
@@ -120,6 +122,12 @@ public class MonoGameViewer : Game, IInputSystem
         if (checkFrame || SwitchRequested)
             Exit();
         base.Draw(gameTime);
+    }
+
+    protected override void EndDraw()
+    {
+        using var present = state.Timeline?.Measure("present", viewer.DisplayedTick);
+        base.EndDraw();
     }
 
     private Color[] ReadFrame()

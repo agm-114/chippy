@@ -1,6 +1,7 @@
 using System.Numerics;
 using Arch.Core;
 using Chippy.Audio;
+using Chippy.Diagnostics;
 using Chippy.Rendering;
 using Chippy.Simulation;
 
@@ -8,11 +9,15 @@ namespace Chippy.Viewer;
 
 public class ViewerState(World world, RenderBackend renderer = RenderBackend.Brutal)
 {
+    internal const int MaxSpeedMultiplier = 10_000;
+    internal const int MaxFrameRate = 500;
     public World World { get; } = world;
     public SimulationScheduler Simulation { get; init; } = new();
+    internal TimelineCapture? Timeline { get; set; }
     public TimeSpan? UniverseTimePerTick { get; init; }
     public bool PublishRenderData = true;
     public bool PreemptiveTicking;
+    public bool ShowProfiler;
     public OrbitCamera Camera { get; init; } = new();
     public Action<World, PrimitiveBatch, Vector2>? DrawOverlay { get; init; }
     public AudioSystem? Audio { get; set; }
@@ -27,6 +32,7 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
     internal EditorWindowLayout HierarchyWindow;
     internal EditorWindowLayout InspectorWindow;
     internal EditorWindowLayout TimeControlsWindow;
+    internal EditorWindowLayout ProfilerWindow;
     public bool Wireframe;
     public bool AutoRotate;
     public bool FollowSelected;

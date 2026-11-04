@@ -1,6 +1,7 @@
 using Arch.Core;
 using Arch.Core.Extensions;
 using Chippy.Components;
+using Chippy.Diagnostics;
 using Chippy.Systems;
 
 namespace Chippy.Rendering;
@@ -14,13 +15,19 @@ public class RenderWorld(World source) : IDisposable
     private World prepared = World.Create();
     private World latest = World.Create();
     private long? preparedTick;
+    private long? preparedRevision;
     private long? latestTick;
+    private long? latestRevision;
+    internal TimelineCapture? Timeline { get; init; }
+    internal long? Revision { get; private set; }
     public World World { get; private set; } = World.Create();
     public long Tick { get; private set; }
     public bool HasPrepared => preparedTick is not null;
 
     public void Prepare(long tick)
     {
+        preparedRevision = Timeline is { IsEnabled: true } timeline ? timeline.NextSnapshot() : null;
+        using var span = Timeline?.Measure("prepare", tick, preparedRevision);
         preparedTick = null;
         transforms.Update();
         prepared.Clear();
@@ -58,6 +65,8 @@ public class RenderWorld(World source) : IDisposable
         {
             (latest, prepared) = (prepared, latest);
             latestTick = tick;
+            latestRevision = preparedRevision;
+            Timeline?.Mark("publish", tick, latestRevision);
         }
         preparedTick = null;
     }
@@ -69,6 +78,8 @@ public class RenderWorld(World source) : IDisposable
             if (latestTick is not { } tick) return;
             (World, latest) = (latest, World);
             Tick = tick;
+            Revision = latestRevision;
+            Timeline?.Mark("acquire", tick, Revision);
             latestTick = null;
         }
     }

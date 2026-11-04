@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using Arch.Core;
 using Arch.Core.Extensions;
@@ -25,6 +26,9 @@ public class ModelViewer : IDisposable
     private bool redraw, disposed;
     private bool uiRefreshPending = true;
     private bool uiAvailable;
+    private long? uiRequestStart, uiRequestRevision, uiRevision;
+    private string? uiRequestReason;
+    private (RenderBackend Renderer, bool Published, bool Early, bool Paused, double Rate, int Fps, double MinimumMs)? traceSettings;
     private bool middleHeld, dragging, focusHeld;
     private readonly QueryDescription focusQuery = new QueryDescription().WithAll<Transform>();
     public ViewerState State { get; }
@@ -47,6 +51,7 @@ public class ModelViewer : IDisposable
         transforms = new(state.World);
         scene = new(renderSystem);
         started = this.clock.GetTimestamp();
+        RecordSettings();
         if (state.PublishRenderData) published = new(state, this.clock);
     }
 
@@ -60,17 +65,33 @@ public class ModelViewer : IDisposable
         return TimeSpan.FromSeconds(Math.Clamp(Math.Min(updateDelay, renderDelay), 0, 0.01));
     }
 
+    internal void WaitForUpdate(bool rendering)
+    {
+        var delay = GetUpdateDelay(rendering);
+        var trace = State.Timeline;
+        var start = trace is { IsEnabled: true } ? Stopwatch.GetTimestamp() : 0;
+        Thread.Sleep(delay);
+        if (start == 0) return;
+        var end = Stopwatch.GetTimestamp();
+        // Sub-millisecond requests can yield instead of sleeping. Keep yields that measurably delayed the window.
+        if (delay.TotalMilliseconds >= 1 || Stopwatch.GetElapsedTime(start, end).TotalMilliseconds >= 0.05)
+            trace!.Record("sleep", start, end, detail: $"Requested {delay.TotalMilliseconds:0.###} ms");
+    }
+
     // UI remains on the window thread, with exclusive live-world access between ticks.
     // The callback returns true for world edits. Native backends queue input without touching the world.
     public bool Update(bool keyboardCaptured = false, bool uiInputPending = false, Func<bool>? updateUi = null, bool mouseCaptured = false)
     {
         EnsureOwner();
+        if (State.Timeline?.IsComplete == true) return false;
         State.Audio?.Update();
         var now = Now;
         var delta = now - previousTime;
         previousTime = now;
         if (!UpdateCamera(delta, keyboardCaptured, mouseCaptured)) return false;
         uiAvailable = updateUi is not null;
+        if (!uiAvailable) uiRequestStart = null;
+        else if (uiInputPending || uiRefreshPending) RecordUiRequest(uiInputPending ? "Input" : "Frame refresh");
         if (published is { } background)
         {
             background.CheckForFailure();
@@ -106,10 +127,44 @@ public class ModelViewer : IDisposable
 
     private bool BuildUi(Func<bool> updateUi, bool inputPending)
     {
+        var trace = State.Timeline;
+        var tick = State.Simulation.Tick;
+        if (trace is { IsEnabled: true })
+        {
+            uiRevision = uiRequestStart is null ? trace.NextUi() : uiRequestRevision;
+            if (uiRequestStart is { } requested)
+                trace.Record("ui-wait", requested, Stopwatch.GetTimestamp(), tick, ui: uiRevision, detail: uiRequestReason);
+            uiRequestStart = null;
+        }
+        using var span = trace?.Measure("ui", tick, ui: uiRevision, detail: inputPending ? "Input" : "Frame refresh");
         var changed = updateUi();
+        RecordSettings();
         uiRefreshPending = false;
         redraw |= inputPending || changed;
         return changed;
+    }
+
+    private void RecordUiRequest(string reason)
+    {
+        if (State.Timeline is not { IsEnabled: true } trace || uiRequestStart is not null) return;
+        uiRequestStart = Stopwatch.GetTimestamp();
+        uiRequestRevision = trace.NextUi();
+        uiRequestReason = reason;
+        trace.Record("ui-request", uiRequestStart.Value, null, ui: uiRequestRevision, detail: reason);
+    }
+
+    private void RecordSettings()
+    {
+        if (State.Timeline is not { IsEnabled: true } trace) return;
+        var simulation = State.Simulation;
+        var settings = (State.Renderer, State.PublishRenderData, State.PreemptiveTicking, !simulation.IsRunning,
+            simulation.TargetTickRate, State.TargetFrameRate, simulation.MinimumTickMilliseconds);
+        if (traceSettings == settings) return;
+        traceSettings = settings;
+        var mode = !State.PublishRenderData ? "Live" : State.PreemptiveTicking ? "Published · early ticks" : "Published";
+        var playback = simulation.IsRunning ? "" : " · paused";
+        var workload = simulation.MinimumTickMilliseconds > 0 ? $" · {simulation.MinimumTickMilliseconds:0.##} ms minimum tick" : "";
+        trace.Mark("settings", simulation.Tick, detail: $"{State.Renderer} · {mode} · {State.TargetFrameRate} FPS target · {simulation.TargetTickRate:0.##} ticks/s target{playback}{workload}");
     }
 
     private void UpdateClock()
@@ -139,6 +194,12 @@ public class ModelViewer : IDisposable
     public void Draw(Vector2 viewportSize)
     {
         EnsureOwner();
+        var displayedTick = PublishedTick ?? State.Simulation.Tick;
+        var now = Now;
+        if (nextRenderTime > 0 && now >= nextRenderTime)
+            State.Timeline?.MarkTarget("frame-target", nextRenderTime - now);
+        using var span = State.Timeline?.Measure("frame", displayedTick, published?.Render.Revision, uiRevision,
+            redraw ? "Redraw requested" : null);
         if (!UsesPublishedData) transforms.Update();
         FollowSelection((float)Math.Clamp(Now - previousRenderTime, 0, 0.1));
         previousRenderTime = Now;
@@ -155,11 +216,15 @@ public class ModelViewer : IDisposable
         renderSystem.BeginFrame(view, projection, State.Wireframe);
         scene.Draw(RenderWorld, viewportSize, State.DrawOverlay, camera.Target, (view, projection.M22));
         drawnCamera = (view, new(projection.M11, projection.M22), eye, near, far);
-        DisplayedTick = PublishedTick ?? State.Simulation.Tick;
+        DisplayedTick = displayedTick;
         if (published is { } background)
         {
             uiRefreshPending = true;
-            if (uiAvailable) background.SetUiPending(true);
+            if (uiAvailable)
+            {
+                RecordUiRequest("Frame refresh");
+                background.SetUiPending(true);
+            }
         }
     }
 

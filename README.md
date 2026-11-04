@@ -36,6 +36,10 @@ Publishing defaults to on and preemptive ticking defaults to off.
 
 ## Simulation scheduling
 
+Use the [runtime timeline](docs/architecture/runtime-timeline.html) to inspect recorded
+ticks, frames, snapshots, and ImGui work. The [capture instructions](docs/architecture/README.md)
+show how to record a run for comparison.
+
 `SimulationScheduler` advances a fixed clock independently of drawing. It defaults
 to 10 ticks per simulated second and runs systems sequentially in registration
 order. Implement `ISimulationSystem.Update(double deltaTime)` and register the
