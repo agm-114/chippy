@@ -9,16 +9,18 @@ public class TransformSystem(World world)
 {
     private readonly QueryDescription query = new QueryDescription().WithAll<Transform>();
     private readonly QueryDescription lineQuery = new QueryDescription().WithAll<Transform, LineRenderer>();
-    private readonly Dictionary<Entity, (Matrix4x4 Matrix, Quaternion Rotation)> frames = [];
+    private readonly Dictionary<Entity, (Matrix4x4 Matrix, Quaternion Rotation, Vector3 Velocity)> frames = [];
     private readonly HashSet<Entity> ancestors = [];
     private readonly List<Entity> path = [];
 
     // Rebuild once per frame so direct component edits and reparenting are immediately reflected.
-    public void Update()
+    public void Update() => Update(trackMotion: false);
+
+    internal void Update(bool trackMotion)
     {
         frames.Clear();
         world.Query(in query, (Entity entity, ref Transform transform) =>
-            transform.LocalToWorldMatrix = Resolve(entity));
+            transform.LocalToWorldMatrix = Resolve(entity, trackMotion));
         world.Query(in lineQuery, (Entity entity, ref Transform transform, ref LineRenderer line) =>
         {
             line.PointSpaceMatrix = entity.TryGet<OrbitPath>(out var path) && frames.TryGetValue(path.Center, out var center)
@@ -26,10 +28,12 @@ public class TransformSystem(World world)
         });
     }
 
-    private Matrix4x4 Resolve(Entity entity)
+    internal Vector3 GetWorldVelocity(Entity entity) => frames.TryGetValue(entity, out var frame) ? frame.Velocity : Vector3.Zero;
+
+    private Matrix4x4 Resolve(Entity entity, bool trackMotion)
     {
         var current = entity;
-        (Matrix4x4 Matrix, Quaternion Rotation) frame;
+        (Matrix4x4 Matrix, Quaternion Rotation, Vector3 Velocity) frame;
         path.Clear();
         ancestors.Clear();
         while (!frames.TryGetValue(current, out frame))
@@ -40,7 +44,7 @@ public class TransformSystem(World world)
             ref var transform = ref world.Get<Transform>(current);
             if (transform.Parent is not { } parent)
             {
-                frame = (Matrix4x4.Identity, Quaternion.Identity);
+                frame = (Matrix4x4.Identity, Quaternion.Identity, Vector3.Zero);
                 break;
             }
             if (parent.WorldId != world.Id)
@@ -49,7 +53,7 @@ public class TransformSystem(World world)
             {
                 // Keep local values when a parent is deleted; never follow a recycled entity ID.
                 transform.Parent = null;
-                frame = (Matrix4x4.Identity, Quaternion.Identity);
+                frame = (Matrix4x4.Identity, Quaternion.Identity, Vector3.Zero);
                 break;
             }
             if (!world.Has<Transform>(parent))
@@ -62,14 +66,17 @@ public class TransformSystem(World world)
         {
             ref var transform = ref world.Get<Transform>(path[index]);
             var parentMatrix = transform.IgnoreParentScale ? WithoutScale(frame) : frame.Matrix;
-            frame = (transform.LocalMatrix * parentMatrix, Quaternion.Concatenate(transform.LocalRotation, frame.Rotation));
+            var velocity = frame.Velocity;
+            if (trackMotion && path[index].TryGet<Kinematics>(out var motion))
+                velocity += Vector3.TransformNormal(motion.Velocity, parentMatrix);
+            frame = (transform.LocalMatrix * parentMatrix, Quaternion.Concatenate(transform.LocalRotation, frame.Rotation), velocity);
             transform.LocalToWorldMatrix = frame.Matrix;
             frames[path[index]] = frame;
         }
         return frame.Matrix;
     }
 
-    private static Matrix4x4 WithoutScale((Matrix4x4 Matrix, Quaternion Rotation) frame)
+    private static Matrix4x4 WithoutScale((Matrix4x4 Matrix, Quaternion Rotation, Vector3 Velocity) frame)
     {
         var matrix = Matrix4x4.CreateFromQuaternion(frame.Rotation);
         matrix.Translation = frame.Matrix.Translation;

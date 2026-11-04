@@ -207,7 +207,8 @@ public class ModelViewer : IDisposable
             State.Timeline?.MarkTarget("frame-target", nextRenderTime - now);
         using var span = State.Timeline?.Measure("frame", displayedTick, published?.Render.Revision, uiRevision,
             redraw ? "Redraw requested" : null);
-        if (!UsesPublishedData) transforms.Update();
+        if (published is { } motionSource) motionSource.Render.PredictMotion(motionSource.GetPredictionSeconds());
+        else transforms.Update();
         FollowSelection((float)Math.Clamp(Now - previousRenderTime, 0, 0.1));
         previousRenderTime = Now;
         var interval = 1.0 / State.TargetFrameRate;
@@ -302,8 +303,7 @@ public class ModelViewer : IDisposable
 
     private void FollowSelection(float deltaTime)
     {
-        // Track the completed frame's movement exactly; smooth only the offset from its center.
-        // Reading published data here keeps focus aligned with the mesh, even during slow ticks.
+        // Use the same predicted position as rendering and smooth the offset from its center.
         if (State.FollowSelected && State.SelectedEntity is { } selected)
             RenderWorld.Query(in focusQuery, (Entity entity, ref Transform transform) =>
             {

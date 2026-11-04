@@ -10,6 +10,8 @@ internal class PublishedSimulation : IDisposable
     private readonly AutoResetEvent wake = new(false);
     private readonly Task loop;
     private long lastUpdate;
+    // This clock anchor is read and changed only by the window thread.
+    private (long Timestamp, double Time, double Speed) motionClock;
     private volatile bool stopping, uiPending, stepping, earlyTick;
 
     public RenderWorld Render { get; }
@@ -27,6 +29,7 @@ internal class PublishedSimulation : IDisposable
             Render.Prepare(state.Simulation.Tick);
             Render.Publish();
             lastUpdate = clock.GetTimestamp();
+            ResetMotionClock();
             loop = Task.Factory.StartNew(Run, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
         catch
@@ -70,12 +73,27 @@ internal class PublishedSimulation : IDisposable
                 Render.Prepare(simulation.Tick);
                 PublishIfDue();
             }
+            if (tick != simulation.Tick || wasEarly != earlyTick || speed != simulation.Speed || paused != simulation.Paused)
+                ResetMotionClock();
             if (refresh || speed != simulation.Speed || paused != simulation.Paused
                 || preemptive != state.PreemptiveTicking || publishing != state.PublishRenderData)
                 wake.Set();
             return true;
         }
         finally { worldAccess.Exit(); }
+    }
+
+    public float GetPredictionSeconds()
+    {
+        if (motionClock.Speed == 0) return 0;
+        var now = motionClock.Time + clock.GetElapsedTime(motionClock.Timestamp).TotalSeconds * motionClock.Speed;
+        return (float)Math.Max(0, now - Render.Tick * state.Simulation.TickDuration);
+    }
+
+    private void ResetMotionClock()
+    {
+        var simulation = state.Simulation;
+        motionClock = (lastUpdate, simulation.ScheduledTime, simulation.IsRunning ? simulation.Speed : 0);
     }
 
     public bool TryStep()

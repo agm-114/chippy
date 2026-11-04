@@ -18,6 +18,7 @@ public class SimulationScheduler
     public long Tick { get; private set; }
     internal TimelineCapture? Timeline { get; set; }
     public double ElapsedTime => Tick * TickDuration;
+    internal double ScheduledTime => ElapsedTime + pendingTicks * TickDuration;
     public double MinimumTickMilliseconds
     {
         get;

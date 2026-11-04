@@ -142,6 +142,19 @@ is excluded from its clock. For headless runs, use the scheduler directly with
 
 ## Components and world
 
+Register `new KinematicsSystem(world)` with the scheduler to move entities that
+have both `Transform` and `Kinematics`. Velocity and acceleration use the same
+space as `Transform.LocalPosition` and time is in simulated seconds. `Acceleration`
+persists across steps. `AddForce` accumulates force for the next step, which adds
+force divided by mass to the acceleration and then clears the accumulated force.
+Mass defaults to one. Register systems that apply forces before kinematics, and
+give each entity a single system that updates its position.
+
+In published mode, the renderer predicts display positions from the latest
+snapshot's velocity and the simulation clock. Motion keeps advancing until the
+next snapshot arrives or the simulation is paused. Each new snapshot corrects
+the predicted position. Simulation transforms still advance only on ticks.
+
 The Arch world owns the scene. Components are ordinary C# structs without marker
 interfaces. CPU mesh assets remain shared C# objects.
 

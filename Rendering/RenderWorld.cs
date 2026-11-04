@@ -1,3 +1,4 @@
+using System.Numerics;
 using Arch.Core;
 using Arch.Core.Extensions;
 using Chippy.Components;
@@ -9,8 +10,11 @@ namespace Chippy.Rendering;
 // The producer builds one world while the window thread draws another. The third holds the latest result.
 public class RenderWorld(World source) : IDisposable
 {
+    private readonly record struct Motion(Vector3 Position, Vector3 Velocity, Vector3 LinePosition, Vector3 LineVelocity);
+
     private readonly TransformSystem transforms = new(source);
     private readonly QueryDescription query = new QueryDescription().WithAll<Transform>();
+    private readonly QueryDescription motionQuery = new QueryDescription().WithAll<Transform, Motion>();
     private readonly Lock exchange = new();
     private World prepared = World.Create();
     private World latest = World.Create();
@@ -29,7 +33,7 @@ public class RenderWorld(World source) : IDisposable
         preparedRevision = Timeline is { IsEnabled: true } timeline ? timeline.NextSnapshot() : null;
         using var span = Timeline?.Measure("prepare", tick, preparedRevision);
         preparedTick = null;
-        transforms.Update();
+        transforms.Update(trackMotion: true);
         prepared.Clear();
         source.Query(in query, (Entity entity, ref Transform transform) =>
         {
@@ -47,8 +51,33 @@ public class RenderWorld(World source) : IDisposable
             }
             if (hasLine) prepared.Add(target, line);
             if (hasLight) prepared.Add(target, light);
+
+            var velocity = transforms.GetWorldVelocity(entity);
+            var lineVelocity = hasLine && !line.UseWorldSpace && line.PointSpaceMatrix is not null
+                && entity.TryGet<OrbitPath>(out var orbit) ? transforms.GetWorldVelocity(orbit.Center) : Vector3.Zero;
+            if (velocity != Vector3.Zero || lineVelocity != Vector3.Zero)
+                prepared.Add(target, new Motion(copy.LocalToWorldMatrix.Translation, velocity,
+                    line.PointSpaceMatrix?.Translation ?? Vector3.Zero, lineVelocity));
         });
         preparedTick = tick;
+    }
+
+    // The window thread owns this snapshot until it acquires a newer one.
+    internal void PredictMotion(float seconds)
+    {
+        World.Query(in motionQuery, (Entity entity, ref Transform transform, ref Motion motion) =>
+        {
+            var matrix = transform.LocalToWorldMatrix;
+            matrix.Translation = motion.Position + motion.Velocity * seconds;
+            transform.LocalToWorldMatrix = matrix;
+            if (motion.LineVelocity != Vector3.Zero)
+            {
+                ref var line = ref World.Get<LineRenderer>(entity);
+                if (line.PointSpaceMatrix is not { } lineMatrix) return;
+                lineMatrix.Translation = motion.LinePosition + motion.LineVelocity * seconds;
+                line.PointSpaceMatrix = lineMatrix;
+            }
+        });
     }
 
     public void Publish()
