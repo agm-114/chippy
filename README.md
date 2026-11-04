@@ -27,11 +27,12 @@ WASD moves the pivot along the camera's ground plane, Space/Ctrl raises/lowers i
 and Shift speeds up keyboard movement. Press F or enable **Follow selected** for smooth
 tracking of a rendered entity. Moving the pivot cancels following; Esc closes.
 Controls take inspiration from [Felicette's camera](https://github.com/agm-114/felicette/blob/main/Assets/Controls/CameraController.cs).
-Camera input pauses while unfocused or captured by ImGui. The panel
-edits entity parenting, local transforms, renderer tint/enabled state, camera,
-wireframe mode, target FPS, and background color. Simulation controls show the
-current tick and simulated time, with pause, speed, single-step, render-data publishing,
-and preemptive-ticking controls. Publishing defaults to on; preemptive ticking defaults to off.
+Camera input pauses while unfocused or captured by ImGui. The **Hierarchy** window
+shows entities and their parent-child relationships. Select an entity there or in the
+scene to see its components in **Inspector**. Transform, mesh, line, light, and marker
+components have dedicated editors. Other components show their public values.
+**Chippy viewer** holds the renderer, simulation, audio, camera, and display controls.
+Publishing defaults to on and preemptive ticking defaults to off.
 
 ## Simulation scheduling
 

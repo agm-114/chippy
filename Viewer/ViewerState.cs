@@ -20,9 +20,11 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
     public WindowPlacement? WindowPlacement { get; private set; }
     public RenderBackend Renderer = renderer;
     public Vector4 Background = new(0.055f, 0.075f, 0.105f, 1);
-    public Vector2 PanelPosition = new(20, 20);
-    public Vector2 PanelSize = new(360, 620);
+    public Vector2 PanelPosition = new(12, 355);
+    public Vector2 PanelSize = new(280, 350);
     public bool PanelCollapsed;
+    internal EditorWindowLayout HierarchyWindow;
+    internal EditorWindowLayout InspectorWindow;
     public bool Wireframe;
     public bool AutoRotate;
     public bool FollowSelected;
