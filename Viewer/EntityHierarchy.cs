@@ -27,6 +27,7 @@ internal sealed class EntityHierarchy(ViewerState state)
         var display = ImGui.GetIO().DisplaySize;
         if (state.HierarchyWindow.Begin("Hierarchy"u8, new(12, 12), new(245, Math.Clamp(display.Y * 0.46f, 140, 330))))
         {
+            DrawScenePicker();
             BuildTree();
             var reveal = state.SelectedEntity != lastSelection;
             revealPath.Clear();
@@ -39,6 +40,22 @@ internal sealed class EntityHierarchy(ViewerState state)
             lastSelection = state.SelectedEntity;
         }
         ImGui.End();
+    }
+
+    private void DrawScenePicker()
+    {
+        var names = state.SceneNames;
+        if (names.Count <= 1) return;
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X * 0.7f);
+        if (!ImGui.BeginCombo("Scene"u8, names[state.SceneIndex])) return;
+        for (var i = 0; i < names.Count; i++)
+        {
+            var selected = i == state.SceneIndex;
+            if (ImGui.Selectable($"{names[i]}##scene{i}", selected) && !selected)
+                state.RequestedScene = i;
+            if (selected) ImGui.SetItemDefaultFocus();
+        }
+        ImGui.EndCombo();
     }
 
     private void BuildTree()

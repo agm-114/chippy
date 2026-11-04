@@ -56,55 +56,31 @@ try
         throw new ArgumentException("Preemptive ticking requires render data publishing.");
     if (vsync && !publish)
         throw new ArgumentException("VSync requires render data publishing.");
-    using var world = World.Create();
+    const int solarScene = 0, meshScene = 1, modelScene = 2;
+    var startInMeshBuilder = args.Contains("--mesh-builder") || args.Contains("--ship-builder");
+    var modelDemo = args.Contains("--model-demo");
     var modelPath = args.FirstOrDefault(arg => !arg.StartsWith("--"));
-    ViewerState state;
-    string name;
-    if (modelPath is not null || args.Contains("--model-demo"))
-    {
+    if (modelDemo)
         modelPath ??= Path.Combine(AppContext.BaseDirectory, "Assets", "Bakery.gltf");
-        var model = Mesh.Load(modelPath);
-        Console.WriteLine($"Loaded {Path.GetFileName(modelPath)}: {model.SubMeshes.Count} primitives, {model.TriangleCount} triangles.");
-        Entity selected;
-        if (args.Contains("--model-demo"))
-        {
-            var parent = world.Create(new Name("Models"), new Transform());
-            selected = world.Create(new Name("Bakery A"), (model.Normalization * Matrix4x4.CreateScale(0.6f)
-                * Matrix4x4.CreateTranslation(-0.85f, 0, 0)).ToTransform(parent), new MeshRenderer(model));
-            world.Create(new Name("Bakery B"), (model.Normalization * Matrix4x4.CreateScale(0.6f)
-                * Matrix4x4.CreateRotationY(0.4f) * Matrix4x4.CreateTranslation(0.85f, 0, 0)).ToTransform(parent),
-                new MeshRenderer(model) { Tint = new(0.6f, 0.8f, 1, 1) });
-        }
-        else
-            selected = world.Create(new Name(Path.GetFileName(modelPath)), model.Normalization.ToTransform(), new MeshRenderer(model));
-        state = new(world, renderer) { SelectedEntity = selected };
-        world.Create(new Name("Key light"), new Transform
-        {
-            LocalRotation = Quaternion.CreateFromYawPitchRoll(0.7f, -0.8f, 0)
-        }, new Light { Type = LightType.Directional, Intensity = 0.85f });
-        name = Path.GetFileName(modelPath);
-    }
-    else
-    {
-        state = SolarSystemDemo.Create(world, renderer);
-        name = "Solar system";
-    }
+    var workingShipPath = smokeTest ? null : MeshBuilder.FindWorkingShipPath();
+    var resumeWorkingShip = modelPath is null && File.Exists(workingShipPath);
+    string[] sceneNames = modelPath is null
+        ? ["Solar System", "Mesh Builder"]
+        : ["Solar System", "Mesh Builder", Path.GetFileName(modelPath)];
+    using var solarWorld = World.Create();
+    using var meshWorld = World.Create();
+    using var modelWorld = modelPath is null ? null : World.Create();
     using var audio = new AudioSystem();
-    state.Audio = audio;
-    state.PublishRenderData = publish;
-    state.VSync = vsync;
-    state.PreemptiveTicking = preemptive;
-    state.TargetFrameRate = frameRate;
-    if (initialSpeed is { } multiplier) state.Simulation.Speed = multiplier;
-    state.Simulation.MinimumTickMilliseconds = tickMilliseconds;
-    state.ShowProfiler = args.Contains("--profiler");
     using var timeline = new TimelineCapture(timelinePath, timelineSeconds);
-    timeline.SetLive(state.ShowProfiler);
-    state.Timeline = timeline;
-    state.Simulation.Timeline = timeline;
+    var showProfiler = args.Contains("--profiler");
+    timeline.SetLive(showProfiler);
     if (!audio.IsAvailable) Console.WriteLine($"Audio unavailable: {audio.Error}");
+
+    var scenes = new ViewerState?[sceneNames.Length];
+    var state = GetScene(startInMeshBuilder || resumeWorkingShip ? meshScene : modelPath is null ? solarScene : modelScene);
     while (true)
     {
+        var name = sceneNames[state.SceneIndex];
         bool switchRequested;
         if (state.Renderer == RenderBackend.MonoGame)
         {
@@ -114,12 +90,75 @@ try
         }
         else
             switchRequested = BrutalViewer.Run(() => new BrutalRenderSystem(), state, name, smokeTest);
+        state.MeshBuilder?.SaveWorkingShip(force: true);
         if (!switchRequested) break;
+        if (state.RequestedScene is not { } requested) continue;
+
+        var previous = state;
+        previous.RequestedScene = null;
+        state = GetScene(requested);
+        state.WindowPlacement = previous.WindowPlacement;
+        state.Renderer = previous.Renderer;
+        state.PublishRenderData = previous.PublishRenderData;
+        state.VSync = previous.VSync;
+        state.PreemptiveTicking = previous.PreemptiveTicking;
+        state.TargetFrameRate = previous.TargetFrameRate;
+        state.ShowProfiler = previous.ShowProfiler;
     }
     return 0;
+
+    ViewerState GetScene(int index)
+    {
+        if (scenes[index] is { } existing) return existing;
+        var scene = index switch
+        {
+            solarScene => SolarSystemDemo.Create(solarWorld, renderer),
+            meshScene => new MeshBuilder(meshWorld, renderer).State,
+            modelScene => LoadModelScene(modelWorld!, renderer, modelPath!, modelDemo),
+            _ => throw new ArgumentOutOfRangeException(nameof(index))
+        };
+        if (!smokeTest) scene.MeshBuilder?.OpenWorkingShip(workingShipPath);
+        scene.SceneIndex = index;
+        scene.SceneNames = sceneNames;
+        scene.Audio = audio;
+        scene.PublishRenderData = publish;
+        scene.VSync = vsync;
+        scene.PreemptiveTicking = preemptive;
+        scene.TargetFrameRate = frameRate;
+        if (initialSpeed is { } multiplier) scene.Simulation.Speed = multiplier;
+        scene.Simulation.MinimumTickMilliseconds = tickMilliseconds;
+        scene.ShowProfiler = showProfiler;
+        scene.Timeline = timeline;
+        scene.Simulation.Timeline = timeline;
+        return scenes[index] = scene;
+    }
 }
 catch (Exception exception)
 {
     Console.Error.WriteLine(exception.Message);
     return 1;
+}
+
+static ViewerState LoadModelScene(World world, RenderBackend renderer, string path, bool demo)
+{
+    var model = Mesh.Load(path);
+    var name = Path.GetFileName(path);
+    Console.WriteLine($"Loaded {name}: {model.SubMeshes.Count} primitives, {model.TriangleCount} triangles.");
+    Entity selected;
+    if (demo)
+    {
+        var parent = world.Create(new Name("Models"), new Transform());
+        selected = world.Create(new Name("Bakery A"), (model.Normalization * Matrix4x4.CreateScale(0.6f)
+            * Matrix4x4.CreateTranslation(-0.85f, 0, 0)).ToTransform(parent), new MeshRenderer(model));
+        world.Create(new Name("Bakery B"), (model.Normalization * Matrix4x4.CreateScale(0.6f)
+            * Matrix4x4.CreateRotationY(0.4f) * Matrix4x4.CreateTranslation(0.85f, 0, 0)).ToTransform(parent),
+            new MeshRenderer(model) { Tint = new(0.6f, 0.8f, 1, 1) });
+    }
+    else
+        selected = world.Create(new Name(name), model.Normalization.ToTransform(), new MeshRenderer(model));
+    world.Create(new Name("Key light"), new Transform
+    {
+        LocalRotation = Quaternion.CreateFromYawPitchRoll(0.7f, -0.8f, 0)
+    }, new Light { Type = LightType.Directional, Intensity = 0.85f });
+    return new(world, renderer) { SelectedEntity = selected };
 }

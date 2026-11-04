@@ -157,7 +157,7 @@ internal sealed class EntityInspector(ViewerState state, EntityHierarchy hierarc
         if (!hasValues) ImGui.TextWrapped(value.ToString() ?? type.Name);
     }
 
-    private static bool DragVector3(ReadOnlySpan<byte> label, ref Vector3 value, float speed, float min = 0, float max = 0)
+    internal static bool DragVector3(ReadOnlySpan<byte> label, ref Vector3 value, float speed, float min = 0, float max = 0)
     {
         var edit = new float3(value.X, value.Y, value.Z);
         if (!ImGui.DragFloat3(label, ref edit, speed, min, max, min < max ? "%.2f"u8 : "%.3f"u8,

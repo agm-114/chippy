@@ -40,7 +40,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
             var placement = state.WindowPlacement;
             using var nativeWindow = Glfw.CreateWindow(new GlfwWindow.CreateInfo
             {
-                Title = $"Chippy · {name} · Middle drag: orbit | WASD: move | Wheel: zoom",
+                Title = $"Chippy · {name} · {state.CameraControls}",
                 Size = new int2(placement?.Width ?? 1280, placement?.Height ?? 720)
             });
             if (placement is { } saved)
@@ -91,6 +91,8 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                 var canDraw = size.X > 0 && size.Y > 0;
                 if (!viewer.Update(ui.WantsKeyboard, ui.HasPendingInput, canDraw ? ui.BuildFrame : null, ui.WantsMouse))
                     return false;
+                if (state.ShouldRestart(RenderBackend.Brutal))
+                    return !window.ShouldClose;
                 if (vsync != viewer.UsesVSync)
                 {
                     vsync = viewer.UsesVSync;
@@ -119,12 +121,10 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                         throw new InvalidOperationException("ImGui rendering check failed.");
                     Console.WriteLine($"ImGui check passed: {uiVertices} UI vertices; no OpenGL errors.");
                     RenderChecks.CheckMeshSharing(renderer, viewer);
-                    return state.Renderer != RenderBackend.Brutal;
+                    return false;
                 }
                 using (state.Timeline?.Measure("present", viewer.DisplayedTick))
                     window.SwapBuffers();
-                if (!window.ShouldClose && state.Renderer != RenderBackend.Brutal)
-                    return true;
             }
             return false;
         }

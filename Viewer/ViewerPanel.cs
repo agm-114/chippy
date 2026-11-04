@@ -3,6 +3,7 @@ using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using Chippy.Audio;
 using Chippy.Simulation;
+using Vector2 = System.Numerics.Vector2;
 
 namespace Chippy.Viewer;
 
@@ -58,12 +59,20 @@ public class ViewerPanel : IDisposable
             ImGui.NewFrame();
             var io = ImGui.GetIO();
             if (!io.WantCaptureMouse && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-                viewer.SelectAt(new(io.MousePos.X, io.MousePos.Y), new(io.DisplaySize.X, io.DisplaySize.Y));
+            {
+                Vector2 pointer = new(io.MousePos.X, io.MousePos.Y), size = new(io.DisplaySize.X, io.DisplaySize.Y);
+                if (viewer.TryPlaceMeshPart(pointer, size)) changed = true;
+                else viewer.SelectAt(pointer, size);
+            }
             DrawViewerControls();
-            DrawTimeControls();
-            profiler.Draw();
             hierarchy.Draw();
-            changed |= inspector.Draw();
+            if (state.MeshBuilder is { } builder) changed |= builder.DrawPanel();
+            else
+            {
+                DrawTimeControls();
+                changed |= inspector.Draw();
+            }
+            profiler.Draw();
             ImGui.Render();
             HasDrawData = true;
             if (!HasPendingInput) return changed;
@@ -103,8 +112,9 @@ public class ViewerPanel : IDisposable
             }
             if (ImGui.CollapsingHeader("Controls"u8))
             {
-                ImGui.TextWrapped("Middle drag: orbit · Shift + middle drag: pan · Wheel / +/-: zoom"u8);
-                ImGui.TextWrapped("WASD: move · Space/Ctrl: up/down · Shift: faster · F: follow selected"u8);
+                ImGui.TextWrapped("Middle drag: orbit · Wheel / +/-: zoom · F: follow selected"u8);
+                if (state.MeshBuilder is null)
+                    ImGui.TextWrapped("WASD: move · Space/Ctrl: up/down · Shift + middle drag: pan"u8);
                 ImGui.TextWrapped("Arrows: orbit · Esc: close"u8);
                 ImGui.TextWrapped("Left click a mesh to select and center it."u8);
             }

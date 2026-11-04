@@ -51,7 +51,7 @@ public class MonoGameViewer : Game, IInputSystem
             GraphicsProfile = GraphicsProfile.HiDef,
             SynchronizeWithVerticalRetrace = state.WantsVSync
         };
-        Window.Title = $"Chippy · {name} · MonoGame · Middle drag: orbit | WASD: move | Wheel: zoom";
+        Window.Title = $"Chippy · {name} · MonoGame · {state.CameraControls}";
         Window.AllowUserResizing = true;
         IsMouseVisible = true;
         IsFixedTimeStep = false;
@@ -80,6 +80,13 @@ public class MonoGameViewer : Game, IInputSystem
         ui!.PollInput();
         if (!viewer.Update(ui.WantsKeyboard, ui.HasPendingInput, CanDraw ? ui.BuildFrame : null, ui.WantsMouse))
         {
+            Exit();
+            return;
+        }
+        if (state.ShouldRestart(RenderBackend.MonoGame))
+        {
+            SwitchRequested = true;
+            SuppressDraw();
             Exit();
             return;
         }
@@ -128,9 +135,7 @@ public class MonoGameViewer : Game, IInputSystem
             Console.WriteLine($"ImGui check passed: {uiVertices} UI vertices; {changed} UI pixels.");
             RenderChecks.CheckMeshSharing(renderer!, viewer);
         }
-        SwitchRequested = state.Renderer != RenderBackend.MonoGame;
-        if (checkFrame || SwitchRequested)
-            Exit();
+        if (checkFrame) Exit();
         base.Draw(gameTime);
     }
 

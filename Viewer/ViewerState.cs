@@ -25,7 +25,7 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
     public AudioSystem? Audio { get; set; }
     public AudioClip? MusicClip { get; init; }
     public AudioClip? EffectClip { get; init; }
-    public WindowPlacement? WindowPlacement { get; private set; }
+    public WindowPlacement? WindowPlacement { get; internal set; }
     public RenderBackend Renderer = renderer;
     public Vector4 Background = new(0.055f, 0.075f, 0.105f, 1);
     public Vector2 PanelPosition = new(12, 355);
@@ -35,6 +35,13 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
     internal EditorWindowLayout InspectorWindow;
     internal EditorWindowLayout TimeControlsWindow;
     internal EditorWindowLayout ProfilerWindow;
+    internal MeshBuilder? MeshBuilder { get; init; }
+    internal string CameraControls => MeshBuilder is null
+        ? "Middle drag: orbit | WASD: move | Wheel: zoom"
+        : "Middle drag: orbit | Wheel: zoom";
+    internal IReadOnlyList<string> SceneNames { get; set; } = [];
+    internal int SceneIndex { get; set; }
+    internal int? RequestedScene { get; set; }
     public bool Wireframe;
     public bool AutoRotate;
     public bool FollowSelected;
@@ -54,4 +61,6 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
         if (width > 0 && height > 0)
             WindowPlacement = new(x, y, width, height);
     }
+
+    internal bool ShouldRestart(RenderBackend backend) => Renderer != backend || RequestedScene is not null;
 }

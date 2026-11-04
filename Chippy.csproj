@@ -17,6 +17,7 @@
     <PackageReference Include="Ahwoo.BRUTAL.ImGui.Backends" Version="2026.10.3" />
     <PackageReference Include="Ahwoo.BRUTAL.OpenGl" Version="2026.10.2" />
     <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.6" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
 
   <ItemGroup>

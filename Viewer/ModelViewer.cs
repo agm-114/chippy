@@ -23,7 +23,9 @@ public class ModelViewer : IDisposable
     private double previousTime, previousSimulationTime, nextRenderTime, previousRenderTime;
     private Entity? followedEntity;
     private Vector3 previousFollowPosition;
-    private (Matrix4x4 View, Vector2 ProjectionScale, Vector3 Eye, float Near, float Far)? drawnCamera;
+    internal readonly record struct FrameCamera(Matrix4x4 View, Vector2 ProjectionScale, Vector3 Eye, float Near, float Far);
+    private FrameCamera? drawnCamera;
+    private readonly Action<World, PrimitiveBatch, Vector2>? drawOverlay;
     private bool redraw, disposed;
     private bool uiRefreshPending = true;
     private bool uiAvailable;
@@ -53,6 +55,9 @@ public class ModelViewer : IDisposable
         this.clock = clock ?? TimeProvider.System;
         transforms = new(state.World);
         scene = new(renderSystem);
+        drawOverlay = state.MeshBuilder is { } builder
+            ? (_, batch, size) => builder.DrawSockets(scene, batch, size, drawnCamera!.Value)
+            : state.DrawOverlay;
         started = this.clock.GetTimestamp();
         RecordSettings();
         if (state.PublishRenderData) published = new(state, this.clock);
@@ -222,8 +227,8 @@ public class ModelViewer : IDisposable
         var far = camera.Distance + camera.FarClip;
         var projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 4, viewportSize.X / viewportSize.Y, near, far);
         renderSystem.BeginFrame(view, projection, State.Wireframe);
-        scene.Draw(RenderWorld, viewportSize, State.DrawOverlay, camera.Target, (view, projection.M22));
-        drawnCamera = (view, new(projection.M11, projection.M22), eye, near, far);
+        drawnCamera = new(view, new(projection.M11, projection.M22), eye, near, far);
+        scene.Draw(RenderWorld, viewportSize, drawOverlay, camera.Target, (view, projection.M22));
         DisplayedTick = displayedTick;
         if (published is { } background)
         {
@@ -257,22 +262,28 @@ public class ModelViewer : IDisposable
         redraw = true;
     }
 
+    internal bool TryPlaceMeshPart(Vector2 pointer, Vector2 displaySize) => input.IsFocused && drawnCamera is not null
+        && State.MeshBuilder?.TryPlace(pointer, displaySize) == true;
+
     private bool UpdateCamera(double delta, bool keyboardCaptured, bool mouseCaptured)
     {
         var camera = State.Camera;
         var frameDelta = (float)Math.Clamp(delta, 0, 0.1);
+        var canPan = State.MeshBuilder is null;
         var shift = input.GetKey(KeyCode.LeftShift) || input.GetKey(KeyCode.RightShift);
-        var movement = Vector3.Zero;
         if (input.IsFocused && !keyboardCaptured)
         {
             if (input.GetKey(KeyCode.Escape)) return false;
-            movement = new(input.GetAxis(KeyCode.A, KeyCode.D),
-                (input.GetKey(KeyCode.Space) ? 1 : 0) - (input.GetKey(KeyCode.LeftControl) || input.GetKey(KeyCode.RightControl) ? 1 : 0),
-                input.GetAxis(KeyCode.S, KeyCode.W));
-            if (movement != Vector3.Zero)
+            if (canPan)
             {
-                State.FollowSelected = false;
-                camera.Pan(Vector3.Normalize(movement) * Math.Max(camera.Distance, 1) * frameDelta * (shift ? 2 : 0.5f));
+                Vector3 movement = new(input.GetAxis(KeyCode.A, KeyCode.D),
+                    (input.GetKey(KeyCode.Space) ? 1 : 0) - (input.GetKey(KeyCode.LeftControl) || input.GetKey(KeyCode.RightControl) ? 1 : 0),
+                    input.GetAxis(KeyCode.S, KeyCode.W));
+                if (movement != Vector3.Zero)
+                {
+                    State.FollowSelected = false;
+                    camera.Pan(Vector3.Normalize(movement) * Math.Max(camera.Distance, 1) * frameDelta * (shift ? 2 : 0.5f));
+                }
             }
             var focus = input.GetKey(KeyCode.F);
             if (focus && !focusHeld) State.FollowSelected = true;
@@ -289,7 +300,7 @@ public class ModelViewer : IDisposable
         if (dragging)
         {
             var mouse = input.MouseDelta;
-            if (shift)
+            if (shift && canPan)
             {
                 State.FollowSelected = false;
                 camera.Pan(new Vector3(-mouse.X, mouse.Y, 0) * camera.Distance * 0.0015f);

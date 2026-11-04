@@ -21,6 +21,13 @@ public class SceneRenderSystem(IRenderSystem renderer)
 
     internal int DrawnMeshAssetCount => drawnMeshes.Select(entry => entry.Mesh).Distinct(ReferenceEqualityComparer.Instance).Count();
 
+    internal Matrix4x4? GetDrawnMeshMatrix(Entity source)
+    {
+        foreach (var mesh in drawnMeshes)
+            if (mesh.Source == source) return mesh.Matrix;
+        return null;
+    }
+
     public void Draw(World world, Vector2 viewportSize, Action<World, PrimitiveBatch, Vector2>? drawOverlay = null,
         Vector3 origin = default, (Matrix4x4 View, float ProjectionScale)? camera = null)
     {
@@ -120,7 +127,7 @@ public class SceneRenderSystem(IRenderSystem renderer)
         return hit;
     }
 
-    private static float TriangleDepth(Vector3 eye, Vector3 direction, Vector3 a, Vector3 b, Vector3 c)
+    internal static float TriangleDepth(Vector3 eye, Vector3 direction, Vector3 a, Vector3 b, Vector3 c)
     {
         var ab = b - a;
         var ac = c - a;
