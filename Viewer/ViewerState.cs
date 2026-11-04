@@ -10,6 +10,7 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
 {
     public World World { get; } = world;
     public SimulationScheduler Simulation { get; init; } = new();
+    public TimeSpan? UniverseTimePerTick { get; init; }
     public bool PublishRenderData = true;
     public bool PreemptiveTicking;
     public OrbitCamera Camera { get; init; } = new();

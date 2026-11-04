@@ -70,6 +70,7 @@ public static class SolarSystemDemo
             SelectedEntity = earth,
             FollowSelected = true,
             Simulation = simulation,
+            UniverseTimePerTick = TimeSpan.FromHours(1) / simulation.TicksPerSecond,
             Camera = new(distance: earthRadius * 4.5f, pitch: 0.35f,
                 target: earth.Get<Transform>().LocalPosition, yaw: -MathF.PI / 2 - 1.7f)
             { MinDistance = earthRadius * 1.1f, MaxDistance = 10_000_000, NearClip = 0.1f, FarClip = 10_000_000 },

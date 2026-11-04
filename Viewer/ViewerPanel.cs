@@ -161,7 +161,7 @@ public class ViewerPanel : IDisposable
         var display = ImGui.GetIO().DisplaySize;
         const float width = 300;
         var simulation = state.Simulation;
-        if (state.TimeControlsWindow.Begin("Time Controls"u8, new(Math.Max(12, (display.X - width) / 2), 12), new(width, 215)))
+        if (state.TimeControlsWindow.Begin("Time Controls"u8, new(Math.Max(12, (display.X - width) / 2), 12), new(width, 230)))
         {
             ImGui.BeginDisabled(simulation.IsRunning);
             if (ImGui.Button("Play"u8))
@@ -182,7 +182,14 @@ public class ViewerPanel : IDisposable
             DrawSpeedButtons(simulation);
             SampleTickRate(simulation);
             ImGui.Text($"Tick rate  {achievedTickRate:0.#} / {simulation.TargetTickRate:0.#} Hz");
-            ImGui.Text($"Tick {simulation.Tick:N0} · {simulation.ElapsedTime:F1} sim seconds");
+            if (state.UniverseTimePerTick is { } timePerTick)
+            {
+                var minutes = Math.Floor(simulation.Tick * timePerTick.TotalMinutes);
+                var hours = Math.Floor(minutes / 60);
+                ImGui.Text($"Universe time  {Math.Floor(hours / 24):N0}d {hours % 24:0}h {minutes % 60:0}m");
+                ImGui.Text($"Tick {simulation.Tick:N0}");
+            }
+            else ImGui.Text($"Tick {simulation.Tick:N0} · {simulation.ElapsedTime:F1} sim seconds");
         }
         ImGui.End();
     }
