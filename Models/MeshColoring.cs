@@ -12,18 +12,18 @@ public partial class Mesh
         return WithFaceColors(baseColor, noiseColor, _ => random.NextDouble() < coverage);
     }
 
-    /// <summary>Colors a sphere with broad landmasses and irregular coastlines.</summary>
-    public Mesh WithContinents(Vector4 waterColor, Vector4 landColor, float landCoverage = 0.3f, int seed = 42) =>
-        WithLandmasses(waterColor, landColor, landCoverage, seed, count: 6, sharpness: 8, coastDetail: 0.16f);
+    /// <summary>Colors faces on a spherical mesh in large, irregular patches.</summary>
+    public Mesh WithBroadClusters(Vector4 baseColor, Vector4 accentColor, float coverage = 0.3f, int seed = 42) =>
+        WithClusters(baseColor, accentColor, coverage, seed, count: 6, sharpness: 8, edgeDetail: 0.16f);
 
-    /// <summary>Colors a sphere with smaller land clusters scattered through the water.</summary>
-    public Mesh WithIslands(Vector4 waterColor, Vector4 landColor, float landCoverage = 0.15f, int seed = 42) =>
-        WithLandmasses(waterColor, landColor, landCoverage, seed, count: 16, sharpness: 40, coastDetail: 0.045f);
+    /// <summary>Colors faces on a spherical mesh in smaller, scattered patches.</summary>
+    public Mesh WithFineClusters(Vector4 baseColor, Vector4 accentColor, float coverage = 0.15f, int seed = 42) =>
+        WithClusters(baseColor, accentColor, coverage, seed, count: 16, sharpness: 40, edgeDetail: 0.045f);
 
-    private Mesh WithLandmasses(Vector4 waterColor, Vector4 landColor, float landCoverage, int seed,
-        int count, int sharpness, float coastDetail)
+    private Mesh WithClusters(Vector4 baseColor, Vector4 accentColor, float coverage, int seed,
+        int count, int sharpness, float edgeDetail)
     {
-        ValidateCoverage(landCoverage);
+        ValidateCoverage(coverage);
         var random = new Random(seed);
         var centers = new Vector3[count];
         for (var i = 0; i < centers.Length; i++)
@@ -35,7 +35,7 @@ public partial class Mesh
         }
 
         var origin = Bounds.Center;
-        var elevations = new List<float>(TriangleCount);
+        var scores = new List<float>(TriangleCount);
         foreach (var surface in SubMeshes)
             for (var i = 0; i < surface.Indices.Length; i += 3)
             {
@@ -43,19 +43,19 @@ public partial class Mesh
                 var centroid = (surface.Vertices[indices[0]].Position + surface.Vertices[indices[1]].Position
                     + surface.Vertices[indices[2]].Position) / 3 - origin;
                 var direction = centroid == Vector3.Zero ? Vector3.Zero : Vector3.Normalize(centroid);
-                var elevation = 0f;
+                var score = 0f;
                 foreach (var center in centers)
-                    elevation += MathF.Pow(MathF.Max(0, Vector3.Dot(direction, center)), sharpness);
-                var coast = MathF.Sin(17 * direction.X + 7 * direction.Z) * MathF.Sin(13 * direction.Y - 5 * direction.X);
-                elevations.Add(elevation + coastDetail * coast);
+                    score += MathF.Pow(MathF.Max(0, Vector3.Dot(direction, center)), sharpness);
+                var detail = MathF.Sin(17 * direction.X + 7 * direction.Z) * MathF.Sin(13 * direction.Y - 5 * direction.X);
+                scores.Add(score + edgeDetail * detail);
             }
 
-        // Rank faces so coverage stays predictable even when elevations tie.
-        var land = new bool[elevations.Count];
-        var landCount = (int)MathF.Round(landCoverage * elevations.Count);
-        foreach (var face in Enumerable.Range(0, elevations.Count).OrderByDescending(i => elevations[i]).Take(landCount))
-            land[face] = true;
-        return WithFaceColors(waterColor, landColor, face => land[face]);
+        // Rank faces so coverage stays predictable even when scores tie.
+        var accentFaces = new bool[scores.Count];
+        var accentCount = (int)MathF.Round(coverage * scores.Count);
+        foreach (var face in Enumerable.Range(0, scores.Count).OrderByDescending(i => scores[i]).Take(accentCount))
+            accentFaces[face] = true;
+        return WithFaceColors(baseColor, accentColor, face => accentFaces[face]);
     }
 
     private Mesh WithFaceColors(Vector4 baseColor, Vector4 accentColor, Func<int, bool> isAccent)
