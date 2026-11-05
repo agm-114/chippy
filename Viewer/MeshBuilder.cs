@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 using Arch.Core;
 using Arch.Core.Extensions;
@@ -28,8 +29,8 @@ internal partial class MeshBuilder
     private static readonly Vector4 DefaultColor = new(0.65f, 0.65f, 0.65f, 1);
     private static readonly Socket[] RootSockets = [new(Vector3.Zero, Vector3.UnitY, "Origin")];
 
-    private readonly Part[] palette;
-    private readonly Dictionary<int, Part> truncatedCones = [];
+    private static readonly ConcurrentDictionary<int, Part> TruncatedCones = new();
+    private static readonly Part[] Palette = CreatePalette();
     private readonly Dictionary<Entity, Placement> parts = [];
     private readonly HashSet<(Entity, int)> occupied = [];
     private readonly List<Entity> history = [];
@@ -42,7 +43,7 @@ internal partial class MeshBuilder
     private string? partMessage;
     public ViewerState State { get; }
 
-    public MeshBuilder(World world, RenderBackend renderer)
+    private static Part[] CreatePalette()
     {
         (Vector3, string)[] axes =
         [
@@ -55,7 +56,7 @@ internal partial class MeshBuilder
             (-Vector3.UnitX, "Left face"), (new(0.5f, 0, 0.8660254f), "Front face"),
             (new(0.5f, 0, -0.8660254f), "Back face"), axes[0], axes[1]
         ];
-        palette =
+        return
         [
             CreatePart("Cube", Mesh.CreateCube(), axes),
             CreatePart("Capsule", Mesh.CreateCapsule(height: 2.6f, segments: 12, hemisphereRings: 3), axes, DefaultRadialSockets),
@@ -65,7 +66,11 @@ internal partial class MeshBuilder
             CreatePart("Triangular Prism", Mesh.CreatePrism(radius: 0.9f, height: 0.16f), prismFaces),
             CreatePart("Icosphere", Mesh.CreateIcosphere(subdivisions: 1), axes, DefaultRadialSockets)
         ];
-        next = DefaultSettings(palette[0]);
+    }
+
+    public MeshBuilder(World world, RenderBackend renderer)
+    {
+        next = DefaultSettings(Palette[0]);
         root = world.Create(new Name("Root"), new Transform());
         world.Create(new Name("Key light"), new Transform { LocalRotation = Quaternion.CreateFromYawPitchRoll(0.6f, -0.9f, 0) },
             new Light { Type = LightType.Directional, Intensity = 1.1f });
@@ -96,7 +101,7 @@ internal partial class MeshBuilder
             ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X * 0.7f);
             if (ImGui.BeginCombo("Part"u8, next.Part.Name))
             {
-                foreach (var part in palette)
+                foreach (var part in Palette)
                     if (ImGui.Selectable(part.Name, next.Part.Name == part.Name) && next.Part.Name != part.Name)
                         next = DefaultSettings(part);
                 ImGui.EndCombo();
@@ -319,11 +324,18 @@ internal partial class MeshBuilder
         var to = (parent == root ? RootSockets : parts[parent].Part.Sockets)[placement.Target];
         ref var transform = ref entity.Get<Transform>();
         var parentScale = parent.Get<Transform>().LocalScale;
+        (transform.LocalPosition, transform.LocalRotation) = GetAttachmentPose(
+            from, to, transform.LocalScale, parentScale, placement.Roll, placement.Offset);
+    }
+
+    private static (Vector3 Position, Quaternion Rotation) GetAttachmentPose(
+        Socket from, Socket to, Vector3 scale, Vector3 parentScale, float roll, Vector3 offset)
+    {
         var normal = Vector3.Normalize(to.Normal / parentScale);
-        var rotation = Align(Vector3.Normalize(from.Normal / transform.LocalScale), -normal);
-        transform.LocalRotation = Quaternion.Concatenate(rotation, Quaternion.CreateFromAxisAngle(normal, placement.Roll * MathF.PI / 180));
-        transform.LocalPosition = to.Position * parentScale + placement.Offset
-            - Vector3.Transform(from.Position * transform.LocalScale, transform.LocalRotation);
+        var rotation = Align(Vector3.Normalize(from.Normal / scale), -normal);
+        rotation = Quaternion.Concatenate(rotation, Quaternion.CreateFromAxisAngle(normal, roll * MathF.PI / 180));
+        var position = to.Position * parentScale + offset - Vector3.Transform(from.Position * scale, rotation);
+        return (position, rotation);
     }
 
     private bool Undo() => history.Count > 0 && RemovePart(history[^1]);
@@ -390,17 +402,14 @@ internal partial class MeshBuilder
     private static Part CreatePart(string name, Mesh mesh, (Vector3 Normal, string Label)[] faces, int radialSockets = 0) =>
         new(name, mesh, faces.Select(face => CreateSocket(mesh, face.Normal, face.Label)).ToArray(), radialSockets);
 
-    private Part GetTruncatedCone(int tipPercent)
+    private static Part GetTruncatedCone(int tipPercent) => TruncatedCones.GetOrAdd(tipPercent, static percent =>
     {
-        if (truncatedCones.TryGetValue(tipPercent, out var part)) return part;
         const float height = 0.76f;
-        var mesh = Mesh.CreateFrustum(0.5f, 0.5f * (tipPercent / 100f), height, 12);
-        part = new("Truncated Cone", mesh,
+        var mesh = Mesh.CreateFrustum(0.5f, 0.5f * (percent / 100f), height, 12);
+        return new("Truncated Cone", mesh,
             [new(-Vector3.UnitY * (height / 2), -Vector3.UnitY, "Bottom"),
-             new(Vector3.UnitY * (height / 2), Vector3.UnitY, "Top")], TipPercent: tipPercent);
-        truncatedCones.Add(tipPercent, part);
-        return part;
-    }
+             new(Vector3.UnitY * (height / 2), Vector3.UnitY, "Top")], TipPercent: percent);
+    });
 
     private static Socket CreateSocket(Mesh mesh, Vector3 normal, string label)
     {

@@ -179,7 +179,10 @@ internal partial class MeshBuilder
         });
     }
 
-    private void ApplyYaml(string yaml)
+    private readonly record struct AssemblyPart(int Id, int Parent, Part Part, int Target, int Mount,
+        Vector3 Scale, Vector3 Offset, float Roll, Vector4 Color, int Link);
+
+    private static (Vector3 Rotation, List<AssemblyPart> Parts) ReadAssembly(string yaml)
     {
         var document = YamlReader.Deserialize<ShipYaml>(yaml);
         if (document?.Parts is not { } entries)
@@ -189,7 +192,7 @@ internal partial class MeshBuilder
         var socketsById = new Dictionary<int, Socket[]> { [0] = RootSockets };
         var usedSockets = new HashSet<(int Part, int Socket)>();
         var linkedAppearance = new Dictionary<int, (Vector3 Scale, Vector4 Color)>();
-        var validated = new List<(int Id, int Parent, Part Part, int Target, int Mount, Vector3 Scale, Vector3 Offset, float Roll, Vector4 Color, int Link)>();
+        var validated = new List<AssemblyPart>(entries.Length);
         foreach (var entry in entries)
         {
             if (entry is null) throw new InvalidDataException("Each entry in parts must describe a part.");
@@ -199,7 +202,7 @@ internal partial class MeshBuilder
                 throw new InvalidDataException($"Part {entry.Id} needs parent {entry.Parent} listed before it.");
             var part = string.Equals(entry.Primitive, "Frustum", StringComparison.OrdinalIgnoreCase)
                 ? GetTruncatedCone(47)
-                : Array.Find(palette, candidate => string.Equals(candidate.Name, entry.Primitive, StringComparison.OrdinalIgnoreCase))
+                : Array.Find(Palette, candidate => string.Equals(candidate.Name, entry.Primitive, StringComparison.OrdinalIgnoreCase))
                     ?? throw new InvalidDataException($"Part {entry.Id} has unknown primitive '{entry.Primitive}'.");
             if (entry.RadialSockets is { } count)
             {
@@ -231,9 +234,14 @@ internal partial class MeshBuilder
 
             socketsById.Add(entry.Id, part.Sockets);
             if (entry.Parent != 0) usedSockets.Add((entry.Id, mount));
-            validated.Add((entry.Id, entry.Parent, part, target, mount, appearance.Scale, offset, roll, appearance.Color, link));
+            validated.Add(new(entry.Id, entry.Parent, part, target, mount, appearance.Scale, offset, roll, appearance.Color, link));
         }
+        return (rotation, validated);
+    }
 
+    private void ApplyYaml(string yaml)
+    {
+        var (rotation, validated) = ReadAssembly(yaml);
         if (history.Count > 0) RemovePart(history[0]);
         SetWorldRotation(rotation);
         var entities = new Dictionary<int, Entity> { [0] = root };

@@ -12,7 +12,9 @@ using Chippy.Viewer;
 
 try
 {
-    var backend = args.FirstOrDefault(arg => arg.StartsWith("--renderer="))?["--renderer=".Length..] ?? "brutal";
+    string? Option(string prefix) => args.FirstOrDefault(arg => arg.StartsWith(prefix))?[prefix.Length..];
+
+    var backend = Option("--renderer=") ?? "brutal";
     if (backend is not ("brutal" or "monogame"))
         throw new ArgumentException($"Unknown renderer '{backend}'. Use --renderer=brutal or --renderer=monogame.");
     var renderer = backend == "monogame" ? RenderBackend.MonoGame : RenderBackend.Brutal;
@@ -20,11 +22,11 @@ try
     var publish = !args.Contains("--no-publish-render-data");
     var vsync = args.Contains("--vsync");
     var preemptive = args.Contains("--preemptive-ticking");
-    var timelinePath = args.FirstOrDefault(arg => arg.StartsWith("--timeline="))?["--timeline=".Length..];
-    var timelineDuration = args.FirstOrDefault(arg => arg.StartsWith("--timeline-seconds="))?["--timeline-seconds=".Length..];
-    var speedArgument = args.FirstOrDefault(arg => arg.StartsWith("--speed="))?["--speed=".Length..];
-    var tickDurationArgument = args.FirstOrDefault(arg => arg.StartsWith("--tick-ms="))?["--tick-ms=".Length..];
-    var frameRateArgument = args.FirstOrDefault(arg => arg.StartsWith("--fps="))?["--fps=".Length..];
+    var timelinePath = Option("--timeline=");
+    var timelineDuration = Option("--timeline-seconds=");
+    var speedArgument = Option("--speed=");
+    var tickDurationArgument = Option("--tick-ms=");
+    var frameRateArgument = Option("--fps=");
     var frameRate = 60;
     if (frameRateArgument is not null && (!int.TryParse(frameRateArgument, CultureInfo.InvariantCulture, out frameRate)
         || frameRate is < 15 or > ViewerState.MaxFrameRate))
@@ -80,7 +82,10 @@ try
     if (!audio.IsAvailable) Console.WriteLine($"Audio unavailable: {audio.Error}");
 
     var scenes = new ViewerState?[sceneNames.Length];
-    var state = GetScene(startInMeshBuilder || resumeWorkingShip ? meshScene : startInSolarSystem || modelPath is null ? solarScene : modelScene);
+    var initialScene = startInMeshBuilder || resumeWorkingShip
+        ? meshScene
+        : startInSolarSystem || modelPath is null ? solarScene : modelScene;
+    var state = GetScene(initialScene);
     while (true)
     {
         var name = sceneNames[state.SceneIndex];
