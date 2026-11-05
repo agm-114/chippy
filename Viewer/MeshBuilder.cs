@@ -25,6 +25,7 @@ internal partial class MeshBuilder
     }
     private const int DefaultRadialSockets = 4;
     private const int DefaultTipPercent = 24;
+    private const float MaxPartOffset = 10_000_000;
     private static readonly int[] RadialCounts = [4, 8, 16];
     private static readonly Vector4 DefaultColor = new(0.65f, 0.65f, 0.65f, 1);
     private static readonly Socket[] RootSockets = [new(Vector3.Zero, Vector3.UnitY, "Origin")];
@@ -182,7 +183,7 @@ internal partial class MeshBuilder
             }
             if (ImGui.IsItemHovered()) ImGui.SetTooltip("Percent of base width. 0% is a point. 100% gives straight sides."u8);
         }
-        changed |= EntityInspector.DragVector3("Offset XYZ"u8, ref settings.Offset, 0.02f);
+        changed |= EntityInspector.DragVector3("Offset XYZ"u8, ref settings.Offset, 0.02f, -MaxPartOffset, MaxPartOffset);
         if (ImGui.IsItemHovered()) ImGui.SetTooltip("Move from the snap point along the parent's axes."u8);
         changed |= DrawRadialSockets(ref settings, entity);
         var sockets = settings.Part.Sockets;

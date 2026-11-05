@@ -49,9 +49,12 @@ internal partial class MeshBuilder
             }
 
             parser.Consume<SequenceStart>();
-            float[] values = [(float)deserialize(typeof(float))!, (float)deserialize(typeof(float))!, (float)deserialize(typeof(float))!];
+            float[] values = [ReadCoordinate(), ReadCoordinate(), ReadCoordinate()];
             parser.Consume<SequenceEnd>();
             return values;
+
+            float ReadCoordinate() => (float?)deserialize(typeof(float?))
+                ?? throw new YamlException("Vector coordinates must be numbers.");
         }
 
         public void WriteYaml(IEmitter emitter, object? value, Type type, ObjectSerializer serialize)
@@ -220,8 +223,15 @@ internal partial class MeshBuilder
             var mount = FindSocket(part.Sockets, entry.Mount, entry.Id, "mount face");
             if (!usedSockets.Add((entry.Parent, target)))
                 throw new InvalidDataException($"Part {entry.Id} uses an occupied parent socket '{entry.Socket}'.");
-            var size = ReadVector(entry.Size, Vector3.One, 0.001f, 10000, $"Part {entry.Id} size");
-            var offset = ReadVector(entry.Offset, Vector3.Zero, -float.MaxValue, float.MaxValue, $"Part {entry.Id} offset");
+            var size = ReadVector(entry.Size, Vector3.One, 0, float.MaxValue, $"Part {entry.Id} size");
+            var bounds = part.Mesh.Bounds.Size;
+            var minScale = new Vector3(0.0001f);
+            var maxScale = new Vector3(100_000f);
+            // Linked parts share scale even when their primitives have different dimensions.
+            if (Vector3.Clamp(size, bounds * minScale, bounds * maxScale) != size)
+                throw new InvalidDataException($"Part {entry.Id} size must scale its primitive between 0.0001 and 100000 on each axis.");
+            var scale = Vector3.Clamp(size / bounds, minScale, maxScale);
+            var offset = ReadVector(entry.Offset, Vector3.Zero, -MaxPartOffset, MaxPartOffset, $"Part {entry.Id} offset");
             var color = ReadVector(entry.Color, new(DefaultColor.X), 0, 1, $"Part {entry.Id} color");
             var roll = entry.Roll ?? 0;
             if (!float.IsFinite(roll) || roll is < -180 or > 180)
@@ -229,7 +239,7 @@ internal partial class MeshBuilder
             if (entry.Link is <= 0)
                 throw new InvalidDataException($"Part {entry.Id} needs a positive link group.");
             var link = entry.Link ?? 0;
-            var appearance = (Scale: size / part.Mesh.Bounds.Size, Color: new Vector4(color, 1));
+            var appearance = (Scale: scale, Color: new Vector4(color, 1));
             if (link != 0 && !linkedAppearance.TryAdd(link, appearance)) appearance = linkedAppearance[link];
 
             socketsById.Add(entry.Id, part.Sockets);
