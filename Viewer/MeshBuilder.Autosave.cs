@@ -5,6 +5,7 @@ namespace Chippy.Viewer;
 internal partial class MeshBuilder
 {
     private const string WorkingShipName = "WorkingShip.yaml";
+    internal static readonly string WorkingShipRelativePath = Path.Combine("Assets", "Meshes", WorkingShipName);
     private string? workingShipPath, workingShipError;
     private bool workingShipDirty;
     private long retryAutosaveAfter;
@@ -14,7 +15,7 @@ internal partial class MeshBuilder
         foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
             for (var folder = new DirectoryInfo(start); folder is not null; folder = folder.Parent)
                 if (File.Exists(Path.Combine(folder.FullName, "Chippy.csproj")))
-                    return Path.Combine(folder.FullName, "Assets", "Meshes", WorkingShipName);
+                    return Path.Combine(folder.FullName, WorkingShipRelativePath);
         return null;
     }
 

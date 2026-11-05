@@ -8,6 +8,7 @@ using Chippy.Rendering;
 using Chippy.Simulation;
 using Chippy.Systems;
 using Chippy.Viewer;
+using YamlDotNet.Core;
 
 namespace Chippy.Demos;
 
@@ -15,7 +16,7 @@ namespace Chippy.Demos;
 // Circular, coplanar orbits; one simulated second represents one hour.
 public static class SolarSystemDemo
 {
-    public static ViewerState Create(World world, RenderBackend backend)
+    public static ViewerState Create(World world, RenderBackend backend, string? shipPath = null, bool keepShipParts = false)
     {
         var sphere = Mesh.CreateIcosphere();
         var earthMesh = sphere.WithBroadClusters(new(0.05f, 0.3f, 0.85f, 1), new(0.12f, 0.65f, 0.2f, 1));
@@ -62,6 +63,21 @@ public static class SolarSystemDemo
                 world.Create(new Name("Saturn rings"), new Transform
                     { Parent = body, IgnoreParentScale = true, LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 0.47f) },
                     LineRenderer.Circle(140.22f, new(0.85f, 0.7f, 0.45f, 1)));
+        }
+        if (File.Exists(shipPath))
+        {
+            try
+            {
+                // Use a display scale that keeps the test ship visible beside Earth.
+                MeshBuilder.LoadAssembly(world, File.ReadAllText(shipPath), new()
+                {
+                    Parent = earth, IgnoreParentScale = true, LocalPosition = new(0, 9, 0)
+                }, scale: 0.45f, keepParts: keepShipParts);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or YamlException or InvalidDataException)
+            {
+                Console.Error.WriteLine($"Could not load the working ship. {error.Message}");
+            }
         }
         var simulation = new SimulationScheduler(ticksPerSecond: 30);
         simulation.Add(new OrbitSystem(world));

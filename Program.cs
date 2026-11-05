@@ -62,8 +62,11 @@ try
     var modelPath = args.FirstOrDefault(arg => !arg.StartsWith("--"));
     if (modelDemo)
         modelPath ??= Path.Combine(AppContext.BaseDirectory, "Assets", "Bakery.gltf");
-    var workingShipPath = smokeTest ? null : MeshBuilder.FindWorkingShipPath();
-    var resumeWorkingShip = modelPath is null && File.Exists(workingShipPath);
+    var workingShipPath = MeshBuilder.FindWorkingShipPath();
+    var solarShipPath = workingShipPath ?? Path.Combine(AppContext.BaseDirectory, MeshBuilder.WorkingShipRelativePath);
+    var keepShipParts = args.Contains("--ship-parts");
+    var startInSolarSystem = args.Contains("--solar-system") || keepShipParts;
+    var resumeWorkingShip = !smokeTest && !startInSolarSystem && modelPath is null && File.Exists(workingShipPath);
     string[] sceneNames = modelPath is null
         ? ["Solar System", "Mesh Builder"]
         : ["Solar System", "Mesh Builder", Path.GetFileName(modelPath)];
@@ -77,7 +80,7 @@ try
     if (!audio.IsAvailable) Console.WriteLine($"Audio unavailable: {audio.Error}");
 
     var scenes = new ViewerState?[sceneNames.Length];
-    var state = GetScene(startInMeshBuilder || resumeWorkingShip ? meshScene : modelPath is null ? solarScene : modelScene);
+    var state = GetScene(startInMeshBuilder || resumeWorkingShip ? meshScene : startInSolarSystem || modelPath is null ? solarScene : modelScene);
     while (true)
     {
         var name = sceneNames[state.SceneIndex];
@@ -112,7 +115,7 @@ try
         if (scenes[index] is { } existing) return existing;
         var scene = index switch
         {
-            solarScene => SolarSystemDemo.Create(solarWorld, renderer),
+            solarScene => SolarSystemDemo.Create(solarWorld, renderer, solarShipPath, keepShipParts),
             meshScene => new MeshBuilder(meshWorld, renderer).State,
             modelScene => LoadModelScene(modelWorld!, renderer, modelPath!, modelDemo),
             _ => throw new ArgumentOutOfRangeException(nameof(index))
