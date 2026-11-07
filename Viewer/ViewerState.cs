@@ -36,9 +36,6 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
     internal EditorWindowLayout TimeControlsWindow;
     internal EditorWindowLayout ProfilerWindow;
     internal MeshBuilder? MeshBuilder { get; init; }
-    internal string CameraControls => MeshBuilder is null
-        ? "Middle drag: orbit | WASD: move | Wheel: zoom"
-        : "Middle drag: orbit | Wheel: zoom";
     internal IReadOnlyList<string> SceneNames { get; set; } = [];
     internal int SceneIndex { get; set; }
     internal int? RequestedScene { get; set; }

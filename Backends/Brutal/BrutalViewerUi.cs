@@ -13,7 +13,6 @@ public class BrutalViewerUi : IDisposable
     private bool disposed;
     public bool WantsKeyboard => panel.WantsKeyboard;
     public bool WantsMouse => panel.WantsMouse;
-    public bool HasPendingInput => panel.HasPendingInput;
 
     public BrutalViewerUi(GlfwWindow window, ModelViewer viewer)
     {

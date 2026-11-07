@@ -51,7 +51,7 @@ public class MonoGameViewer : Game, IInputSystem
             GraphicsProfile = GraphicsProfile.HiDef,
             SynchronizeWithVerticalRetrace = state.WantsVSync
         };
-        Window.Title = $"Chippy · {name} · MonoGame · {state.CameraControls}";
+        Window.Title = $"Chippy · {name} · MonoGame";
         Window.AllowUserResizing = true;
         IsMouseVisible = true;
         IsFixedTimeStep = false;
@@ -78,7 +78,7 @@ public class MonoGameViewer : Game, IInputSystem
         mouseInitialized = true;
         wasFocused = IsFocused;
         ui!.PollInput();
-        if (!viewer.Update(ui.WantsKeyboard, ui.HasPendingInput, CanDraw ? ui.BuildFrame : null, ui.WantsMouse))
+        if (!viewer.Update(ui.WantsKeyboard, CanDraw ? ui.BuildFrame : null, ui.WantsMouse))
         {
             Exit();
             return;

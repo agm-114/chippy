@@ -103,7 +103,7 @@ internal partial class MeshBuilder
                     ApplyYaml(text.ToString());
                     applied = true;
                     yamlDirty = yamlStale = false;
-                    yamlMessage = "Applied to ship.";
+                    yamlMessage = "Applied.";
                 }
                 catch (YamlException error)
                 {
@@ -116,12 +116,11 @@ internal partial class MeshBuilder
             }
             ImGui.EndDisabled();
             ImGui.SameLine();
-            if (ImGui.Button("Reload from ship"u8)) ReloadYaml(text);
+            if (ImGui.Button("Reload"u8)) ReloadYaml(text);
             ImGui.SameLine();
             if (ImGui.Button("Close"u8)) showYaml = false;
-            ImGui.TextWrapped(yamlMessage ?? (yamlStale && yamlDirty
-                ? "The ship changed. Applying this draft replaces it."
-                : "List parents before children. Use parent 0 for the root. Linked parts inherit scale and color from the first part in their group."));
+            if (yamlMessage is not null) ImGui.TextWrapped(yamlMessage);
+            else if (yamlStale && yamlDirty) ImGui.TextWrapped("Ship changed. Apply to replace."u8);
             if (ImGui.InputTextMultiline("##ShipYaml"u8, text, new float2(-1, -1)))
             {
                 yamlDirty = true;
@@ -142,7 +141,7 @@ internal partial class MeshBuilder
         else
         {
             text.Clear();
-            yamlMessage = "This ship is too large for the YAML editor.";
+            yamlMessage = "YAML editor capacity exceeded.";
         }
     }
 

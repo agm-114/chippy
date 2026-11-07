@@ -40,7 +40,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
             var placement = state.WindowPlacement;
             using var nativeWindow = Glfw.CreateWindow(new GlfwWindow.CreateInfo
             {
-                Title = $"Chippy · {name} · {state.CameraControls}",
+                Title = $"Chippy · {name} · BRUTAL",
                 Size = new int2(placement?.Width ?? 1280, placement?.Height ?? 720)
             });
             if (placement is { } saved)
@@ -89,7 +89,7 @@ public unsafe class BrutalViewer(GlfwWindow window) : IInputSystem
                 ui.PollInput();
                 var size = window.FramebufferSize;
                 var canDraw = size.X > 0 && size.Y > 0;
-                if (!viewer.Update(ui.WantsKeyboard, ui.HasPendingInput, canDraw ? ui.BuildFrame : null, ui.WantsMouse))
+                if (!viewer.Update(ui.WantsKeyboard, canDraw ? ui.BuildFrame : null, ui.WantsMouse))
                     return false;
                 if (state.ShouldRestart(RenderBackend.Brutal))
                     return !window.ShouldClose;

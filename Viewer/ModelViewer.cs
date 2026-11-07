@@ -29,9 +29,7 @@ public class ModelViewer : IDisposable
     private bool redraw, disposed;
     private bool uiRefreshPending = true;
     private bool uiAvailable;
-    private bool inputAwaitingUi;
     private long? uiRequestStart, uiRequestRevision, uiRevision;
-    private string? uiRequestReason;
     private (RenderBackend Renderer, bool Published, bool Early, bool VSync, bool Paused, double Rate, int Fps, double MinimumMs)? traceSettings;
     private bool middleHeld, dragging, focusHeld;
     private readonly QueryDescription focusQuery = new QueryDescription().WithAll<Transform>();
@@ -89,7 +87,7 @@ public class ModelViewer : IDisposable
 
     // UI remains on the window thread, with exclusive live-world access between ticks.
     // The callback returns true for world edits. Native backends queue input without touching the world.
-    public bool Update(bool keyboardCaptured = false, bool uiInputPending = false, Func<bool>? updateUi = null, bool mouseCaptured = false)
+    public bool Update(bool keyboardCaptured = false, Func<bool>? updateUi = null, bool mouseCaptured = false)
     {
         EnsureOwner();
         if (State.Timeline?.IsComplete == true) return false;
@@ -99,16 +97,15 @@ public class ModelViewer : IDisposable
         previousTime = now;
         if (!UpdateCamera(delta, keyboardCaptured, mouseCaptured)) return false;
         uiAvailable = updateUi is not null;
-        inputAwaitingUi = uiAvailable && uiInputPending;
         if (!uiAvailable) uiRequestStart = null;
-        else if (uiInputPending || uiRefreshPending) RecordUiRequest(uiInputPending ? "Input" : "Frame refresh");
+        else if (uiRefreshPending) RecordUiRequest();
         if (published is { } background)
         {
             background.CheckForFailure();
-            var uiPending = uiAvailable && (uiInputPending || uiRefreshPending);
+            var uiPending = uiAvailable && uiRefreshPending;
             background.SetUiPending(uiPending);
             if ((uiPending || !State.PublishRenderData)
-                && background.TryUseWorld(() => uiPending && BuildUi(updateUi!, uiInputPending)))
+                && background.TryUseWorld(() => uiPending && BuildUi(updateUi!)))
             {
                 background.SetUiPending(false);
                 if (!State.PublishRenderData && !background.HasPreparedTick)
@@ -125,9 +122,9 @@ public class ModelViewer : IDisposable
 
         UpdateClock();
         var simulation = State.Simulation;
-        if (updateUi is not null && (uiRefreshPending || uiInputPending || ShouldRender || simulation.CanTakeTick()))
+        if (updateUi is not null && (uiRefreshPending || ShouldRender || simulation.CanTakeTick()))
         {
-            BuildUi(updateUi, uiInputPending);
+            BuildUi(updateUi);
             UpdateClock();
         }
         if (State.PublishRenderData) published = new(State, clock);
@@ -135,7 +132,7 @@ public class ModelViewer : IDisposable
         return true;
     }
 
-    private bool BuildUi(Func<bool> updateUi, bool inputPending)
+    private bool BuildUi(Func<bool> updateUi)
     {
         var trace = State.Timeline;
         var tick = State.Simulation.Tick;
@@ -143,25 +140,22 @@ public class ModelViewer : IDisposable
         {
             uiRevision = uiRequestStart is null ? trace.NextUi() : uiRequestRevision;
             if (uiRequestStart is { } requested)
-                trace.Record("ui-wait", requested, Stopwatch.GetTimestamp(), tick, ui: uiRevision, detail: uiRequestReason);
+                trace.Record("ui-wait", requested, Stopwatch.GetTimestamp(), tick, ui: uiRevision, detail: "Frame refresh");
             uiRequestStart = null;
         }
-        using var span = trace?.Measure("ui", tick, ui: uiRevision, detail: inputPending ? "Input" : "Frame refresh");
+        using var span = trace?.Measure("ui", tick, ui: uiRevision, detail: "Frame refresh");
         var changed = updateUi();
         RecordSettings();
         uiRefreshPending = false;
-        inputAwaitingUi = false;
-        redraw |= inputPending || changed;
         return changed;
     }
 
-    private void RecordUiRequest(string reason)
+    private void RecordUiRequest()
     {
         if (State.Timeline is not { IsEnabled: true } trace || uiRequestStart is not null) return;
         uiRequestStart = Stopwatch.GetTimestamp();
         uiRequestRevision = trace.NextUi();
-        uiRequestReason = reason;
-        trace.Record("ui-request", uiRequestStart.Value, null, ui: uiRequestRevision, detail: reason);
+        trace.Record("ui-request", uiRequestStart.Value, null, ui: uiRequestRevision, detail: "Frame refresh");
     }
 
     private void RecordSettings()
@@ -235,9 +229,9 @@ public class ModelViewer : IDisposable
             uiRefreshPending = true;
             if (uiAvailable)
             {
-                RecordUiRequest("Frame refresh");
+                RecordUiRequest();
                 // A frame refresh can wait until the window returns from a synchronized present.
-                background.SetUiPending(!UsesVSync || inputAwaitingUi);
+                background.SetUiPending(!UsesVSync);
             }
         }
     }

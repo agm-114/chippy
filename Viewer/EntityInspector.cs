@@ -34,7 +34,7 @@ internal sealed class EntityInspector(ViewerState state, EntityHierarchy hierarc
                 ImGui.PopItemWidth();
                 ImGui.PopID();
             }
-            else ImGui.Text("Select an entity in the Hierarchy."u8);
+            else ImGui.Text("No selection."u8);
         }
         ImGui.End();
         return changed;

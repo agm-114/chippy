@@ -92,12 +92,11 @@ internal partial class MeshBuilder
         var display = ImGui.GetIO().DisplaySize;
         if (window.Begin("Mesh Builder"u8, new(Math.Max(12, display.X - width - 12), 12), new(width, 500)))
         {
-            ImGui.TextWrapped("Click a gold snap point to add a part. Ctrl+C copies selected settings to Next Part. Ctrl+V applies them to the selection."u8);
             var rotation = worldRotation;
             ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X * 0.55f);
             if (EntityInspector.DragVector3("World rotation"u8, ref rotation, 0.5f, -360, 360))
                 changed |= SetWorldRotation(rotation);
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Rotate the entire ship around its root. XYZ in degrees."u8);
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("XYZ degrees."u8);
             ImGui.SeparatorText("Next Part"u8);
             ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X * 0.7f);
             if (ImGui.BeginCombo("Part"u8, next.Part.Name))
@@ -181,10 +180,10 @@ internal partial class MeshBuilder
                 settings.Part = GetTruncatedCone(tip);
                 changed = true;
             }
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Percent of base width. 0% is a point. 100% gives straight sides."u8);
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Percent of base width."u8);
         }
         changed |= EntityInspector.DragVector3("Offset XYZ"u8, ref settings.Offset, 0.02f, -MaxPartOffset, MaxPartOffset);
-        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Move from the snap point along the parent's axes."u8);
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Parent axes."u8);
         changed |= DrawRadialSockets(ref settings, entity);
         var sockets = settings.Part.Sockets;
         if (sockets.Length > 1 && ImGui.BeginCombo("Mount face"u8, sockets[settings.Mount].Label))
@@ -294,7 +293,7 @@ internal partial class MeshBuilder
             var target = Array.FindIndex(settings.Part.Sockets, socket => socket.Label == label);
             if (target < 0 || (placement.Parent != root && target == settings.Mount))
             {
-                partMessage = $"Free the {label} attachment before applying these settings.";
+                partMessage = $"{label} socket is occupied.";
                 return false;
             }
             children.Add((child, attachment with { Target = target }));

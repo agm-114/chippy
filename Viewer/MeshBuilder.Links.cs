@@ -32,7 +32,7 @@ internal partial class MeshBuilder
             MarkShipChanged();
             changed = true;
         }
-        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Linked parts share XYZ scale and color."u8);
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Shares scale and color."u8);
         return changed;
     }
 

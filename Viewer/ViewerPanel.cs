@@ -25,7 +25,6 @@ public class ViewerPanel : IDisposable
 
     public bool WantsKeyboard => ImGui.GetIO().WantCaptureKeyboard;
     public bool WantsMouse => ImGui.GetIO().WantCaptureMouse;
-    public bool HasPendingInput => context.InputEventsQueue.Count > 0;
     public bool HasDrawData { get; private set; }
 
     public unsafe ViewerPanel(ModelViewer viewer)
@@ -47,37 +46,31 @@ public class ViewerPanel : IDisposable
         style.WindowPadding = new float2(16, 16);
     }
 
-    // ImGui can trickle a queued press/release across frames. Drain it while the world
-    // is safe, so the next simulation tick cannot delay the release/click action again.
     public bool BuildFrame()
     {
         ImGui.GetIO().DeltaTime = Math.Max((float)timer.Elapsed.TotalSeconds, 0.001f);
         timer.Restart();
         var changed = false;
-        do
+        ImGui.NewFrame();
+        var io = ImGui.GetIO();
+        if (!io.WantCaptureMouse && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
         {
-            ImGui.NewFrame();
-            var io = ImGui.GetIO();
-            if (!io.WantCaptureMouse && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            {
-                Vector2 pointer = new(io.MousePos.X, io.MousePos.Y), size = new(io.DisplaySize.X, io.DisplaySize.Y);
-                if (viewer.TryPlaceMeshPart(pointer, size)) changed = true;
-                else viewer.SelectAt(pointer, size);
-            }
-            DrawViewerControls();
-            hierarchy.Draw();
-            if (state.MeshBuilder is { } builder) changed |= builder.DrawPanel();
-            else
-            {
-                DrawTimeControls();
-                changed |= inspector.Draw();
-            }
-            profiler.Draw();
-            ImGui.Render();
-            HasDrawData = true;
-            if (!HasPendingInput) return changed;
-            ImGui.GetIO().DeltaTime = 0.001f;
-        } while (true);
+            Vector2 pointer = new(io.MousePos.X, io.MousePos.Y), size = new(io.DisplaySize.X, io.DisplaySize.Y);
+            if (viewer.TryPlaceMeshPart(pointer, size)) changed = true;
+            else viewer.SelectAt(pointer, size);
+        }
+        DrawViewerControls();
+        hierarchy.Draw();
+        if (state.MeshBuilder is { } builder) changed |= builder.DrawPanel();
+        else
+        {
+            DrawTimeControls();
+            changed |= inspector.Draw();
+        }
+        profiler.Draw();
+        ImGui.Render();
+        HasDrawData = true;
+        return changed;
     }
 
     private void DrawViewerControls()
@@ -109,14 +102,6 @@ public class ViewerPanel : IDisposable
             {
                 ImGui.Checkbox("Wireframe"u8, ref state.Wireframe);
                 EntityInspector.EditColor("Background"u8, ref state.Background);
-            }
-            if (ImGui.CollapsingHeader("Controls"u8))
-            {
-                ImGui.TextWrapped("Middle drag: orbit · Wheel / +/-: zoom · F: follow selected"u8);
-                if (state.MeshBuilder is null)
-                    ImGui.TextWrapped("WASD: move · Space/Ctrl: up/down · Shift + middle drag: pan"u8);
-                ImGui.TextWrapped("Arrows: orbit · Esc: close"u8);
-                ImGui.TextWrapped("Left click a mesh to select and center it."u8);
             }
             ImGui.PopItemWidth();
         }
