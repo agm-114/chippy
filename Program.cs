@@ -68,7 +68,6 @@ try
     var solarShipPath = workingShipPath ?? Path.Combine(AppContext.BaseDirectory, MeshBuilder.WorkingShipRelativePath);
     var keepShipParts = args.Contains("--ship-parts");
     var startInSolarSystem = args.Contains("--solar-system") || keepShipParts;
-    var resumeWorkingShip = !smokeTest && !startInSolarSystem && modelPath is null && File.Exists(workingShipPath);
     string[] sceneNames = modelPath is null
         ? ["Solar System", "Mesh Builder"]
         : ["Solar System", "Mesh Builder", Path.GetFileName(modelPath)];
@@ -82,7 +81,7 @@ try
     if (!audio.IsAvailable) Console.WriteLine($"Audio unavailable: {audio.Error}");
 
     var scenes = new ViewerState?[sceneNames.Length];
-    var initialScene = startInMeshBuilder || resumeWorkingShip
+    var initialScene = startInMeshBuilder
         ? meshScene
         : startInSolarSystem || modelPath is null ? solarScene : modelScene;
     var state = GetScene(initialScene);

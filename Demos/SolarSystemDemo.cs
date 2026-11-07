@@ -68,11 +68,10 @@ public static class SolarSystemDemo
         {
             try
             {
-                // Use a display scale that keeps the test ship visible beside Earth.
                 MeshBuilder.LoadAssembly(world, File.ReadAllText(shipPath), new()
                 {
                     Parent = earth, IgnoreParentScale = true, LocalPosition = new(0, 9, 0)
-                }, scale: 0.45f, keepParts: keepShipParts);
+                }, scale: 0.045f, keepParts: keepShipParts);
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or YamlException or InvalidDataException)
             {
