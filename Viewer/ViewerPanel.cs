@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Brutal.ImGuiApi;
+using Brutal.ImPlotApi;
 using Brutal.Numerics;
 using Chippy.Audio;
 using Chippy.Simulation;
@@ -12,12 +13,14 @@ public class ViewerPanel : IDisposable
     private static readonly double[] SpeedMultipliers =
         [0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, ViewerState.MaxSpeedMultiplier];
     private readonly ImGuiContextPtr context;
+    private readonly ImPlotContextPtr plotContext;
     private readonly ViewerState state;
     private readonly ModelViewer viewer;
     private readonly Stopwatch timer = Stopwatch.StartNew();
     private readonly EntityHierarchy hierarchy;
     private readonly EntityInspector inspector;
     private readonly ProfilerPanel profiler;
+    private readonly ProductionUiDemo productionUiDemo;
     private long tickSampleStart = Stopwatch.GetTimestamp();
     private long tickSampleCount;
     private double sampledTargetRate, achievedTickRate;
@@ -34,7 +37,10 @@ public class ViewerPanel : IDisposable
         hierarchy = new(state);
         inspector = new(state, hierarchy);
         profiler = new(state);
+        productionUiDemo = new(state);
         context = ImGui.CreateContext();
+        ImPlot.SetImGuiContext(context);
+        plotContext = ImPlot.CreateContext();
         var io = ImGui.GetIO();
         io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
         io.IniFilename = null;
@@ -68,6 +74,7 @@ public class ViewerPanel : IDisposable
             changed |= inspector.Draw();
         }
         profiler.Draw();
+        productionUiDemo.Draw();
         ImGui.Render();
         HasDrawData = true;
         return changed;
@@ -92,6 +99,7 @@ public class ViewerPanel : IDisposable
             ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X * 0.55f);
             var fps = ImGui.GetIO().Framerate;
             ImGui.Text($"{fps:F0} UI updates/s");
+            if (ImGui.Button("Production UI demo"u8)) state.ShowProductionUiDemo = true;
 
             DrawRendererControls();
             DrawSimulationSettings();
@@ -260,6 +268,7 @@ public class ViewerPanel : IDisposable
     {
         if (disposed)
             return;
+        ImPlot.DestroyContext(plotContext);
         ImGui.DestroyContext(context);
         disposed = true;
     }

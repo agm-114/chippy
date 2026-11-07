@@ -20,6 +20,7 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
     internal bool WantsVSync => PublishRenderData && VSync;
     public bool PreemptiveTicking;
     public bool ShowProfiler;
+    public bool ShowProductionUiDemo;
     public OrbitCamera Camera { get; init; } = new();
     public Action<World, PrimitiveBatch, Vector2>? DrawOverlay { get; init; }
     public AudioSystem? Audio { get; set; }
@@ -35,6 +36,7 @@ public class ViewerState(World world, RenderBackend renderer = RenderBackend.Bru
     internal EditorWindowLayout InspectorWindow;
     internal EditorWindowLayout TimeControlsWindow;
     internal EditorWindowLayout ProfilerWindow;
+    internal EditorWindowLayout ProductionUiDemoWindow;
     internal MeshBuilder? MeshBuilder { get; init; }
     internal IReadOnlyList<string> SceneNames { get; set; } = [];
     internal int SceneIndex { get; set; }
